@@ -1,0 +1,100 @@
+# =====================================================================
+#  AJAN BOT - Ayarlar
+#  Her şeyi buradan değiştir. Koda dokunmana gerek yok.
+# =====================================================================
+
+# --- Çalışma modu ---
+#   sinyal   : sadece analiz eder, karar yazar, emir ATMAZ
+#   onay     : emir atmadan önce konsolda "e/h" diye sana sorar   (ÖNERİLEN BAŞLANGIÇ)
+#   otomatik : sormaz, kurallara uyan her kararı uygular
+mod: onay
+
+# Gerçek hesapta çalışmayı engeller. Demo'da aylarca test etmeden false yapma.
+sadece_demo: true
+
+zaman_dilimi: H1          # Tarama zaman dilimi: M15, M30, H1, H4
+ust_zaman_dilimi: H4      # Trend teyidi için üst zaman dilimi
+tarama_bar: 300           # Her sembol için kaç mum çekilsin
+mum_kapanis_gecikme_sn: 15  # Mum kapandıktan kaç sn sonra taransın
+magic: 260611             # Botun emirlerini tanımak için kimlik numarası
+
+# --- Hangi piyasalar taranacak? ---
+# Broker'ın MT5'teki sembol klasör yolunda (path) bu kelimeler aranır.
+# Broker'dan brokera klasör isimleri değişir; "python araclar.py semboller"
+# komutuyla kendi broker'ındaki yolları görüp burayı düzeltebilirsin.
+piyasalar:
+  forex:  ["forex", "fx", "major", "minor", "exotic", "cross"]
+  endeks: ["indic", "index", "indeks", "cash", "stock ind"]
+  kripto: ["crypto", "kripto", "coin"]
+  emtia:  ["metal", "gold", "silver", "commod", "energ", "oil"]
+
+# Doluysa SADECE bunlar taranır (başlangıçta küçük liste ile denemek iyi fikir)
+# Örnek: ["EURUSD", "GBPUSD", "XAUUSD", "US100", "GER40", "BTCUSD", "ETHUSD"]
+manuel_semboller: []
+haric_semboller: []
+
+# --- Tarayıcı (LLM'siz, ücretsiz ön eleme) ---
+tarayici:
+  max_aday: 3              # Her taramada ajanlara gönderilecek en iyi aday sayısı
+  min_skor: 60             # 0-100 arası; altı direkt elenir
+  max_spread_atr_orani: 0.12  # Spread, ATR'nin %12'sinden büyükse sembol elenir
+  min_bar: 220
+
+# --- LLM modelleri ---
+# Model isimleri zamanla değişir. "python araclar.py modeller" ile
+# hesabında açık olan güncel isimleri görüp buraya yaz.
+llm:
+  claude: claude-sonnet-5-5       # Karar (yargıç) için güçlü model
+  claude_hizli: claude-haiku-5-5  # Ajanlar için ucuz/hızlı model
+  grok: grok-4
+  grok_hizli: grok-4-fast
+  max_token: 900
+  zaman_asimi_sn: 60
+
+# Hangi ajan hangi modeli kullansın? (claude | claude_hizli | grok | grok_hizli)
+# Boğa ve Ayı'yı farklı modellere vermek "yankı odası" etkisini azaltır.
+ajanlar:
+  boga:  claude_hizli
+  ayi:   grok_hizli
+  makro: grok_hizli
+  risk:  claude_hizli
+
+# Son karar: claude | grok | ikisi
+#   ikisi = Claude ve Grok ayrı ayrı karar verir, İKİSİ DE onaylarsa işlem açılır
+karar_modu: ikisi
+min_destek_oyu: 2        # Boğa/Makro/Risk'ten en az kaçı "DESTEK" demeli
+ayi_veto_guven: 85       # Ayı ajanı bu güvenle "KARSI" derse işlem direkt iptal
+min_karar_guven: 65      # Yargıcın güveni bunun altındaysa işlem yok
+
+# --- Derin analiz: TradingAgents (isteğe bağlı, yavaş ve pahalı) ---
+# Hızlı ajanların onayladığı adaylar ayrıca TradingAgents'a sorulur.
+# Kurulum: pip install git+https://github.com/TauricResearch/TradingAgents.git
+derin_analiz:
+  aktif: false
+  saglayici: anthropic        # anthropic | xai
+  derin_model: claude-sonnet-5-5
+  hizli_model: claude-haiku-5-5
+  tartisma_turu: 1
+  eslesme_yoksa_gecir: false  # Yahoo karşılığı olmayan sembolde işlem açılsın mı?
+
+# --- Risk (BU KISIM KODDA SABİT, LLM DEĞİŞTİREMEZ) ---
+risk:
+  islem_basi_risk_yuzde: 0.5    # Her işlemde bakiyenin max %0.5'i riske
+  gunluk_max_zarar_yuzde: 2.0   # Gün içinde %2 kayıpta bot o gün yeni işlem açmaz
+  max_acik_pozisyon: 4
+  max_ayni_doviz: 2             # Aynı dövize (ör. USD) bağlı en fazla 2 pozisyon
+  sl_atr_carpan: 1.5            # Stop = giriş ± 1.5 x ATR
+  tp_r: 2.0                     # Hedef = 2R (riskin 2 katı)
+  breakeven_r: 1.0              # 1R kâra gelince stop girişe çekilir
+  trailing_baslangic_r: 1.5     # 1.5R'den sonra ATR ile takip eden stop
+  trailing_atr_carpan: 1.2
+  max_sapma_puan: 20            # Emir fiyat kayması toleransı (point)
+
+# --- Haber filtresi ---
+haber:
+  aktif: true
+  blackout_dk: 30          # Yüksek etkili haberden 30 dk önce/sonra yeni işlem yok
+  kaynak: "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+
+# Konsol yerine dosyaya da log yazılsın
+log_klasoru: kayitlar
