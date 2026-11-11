@@ -1,0 +1,113 @@
+32 sembol | eğitim 2015-03-03 → 2021-09-16 | TEST → 2024-07-06 | KİLİTLİ → 2026-11-07
+
+####################################################################################################
+ KİLİTLİ DÖNEM — K1: Kripto günlük kırılım (20 gün zirve, >SMA200) + TP 1 / SL 2 günlük ATR, 120 mum
+####################################################################################################
+{
+ "cikis": "Cikis(sl_atr=2.0, tp_r=0.5, be_r=1e+18, tr_bas=1e+18, tr_atr=0.0, max_mum=120, atr='d_atr')",
+ "sembol_basina": {
+  "islem": 226,
+  "kazanma_%": 60.2,
+  "ort_R": 0.015,
+  "toplam_R": 3.5,
+  "kar_faktoru": 1.06,
+  "max_dusus_R": 10.1,
+  "getiri_%": 1.7,
+  "max_dusus_%": 5.1
+ },
+ "portfoy": {
+  "islem": 132,
+  "kazanma_%": 55.3,
+  "ort_R": -0.044,
+  "toplam_R": -5.9,
+  "kar_faktoru": 0.86,
+  "max_dusus_R": 10.4,
+  "getiri_%": -2.9,
+  "max_dusus_%": 5.2,
+  "yillik_getiri_%": -1.2
+ },
+ "rastgele": {
+  "strateji_ort_R": 0.0154,
+  "rastgele_ort_R": -0.0221,
+  "fark": 0.0375,
+  "p": 0.1565,
+  "rastgele_kazanma_%": 53.4
+ },
+ "ort_R_%95": [
+  -0.122,
+  0.115
+ ]
+}
+Sembol başına:
+ sembol  islem  kazanma_%  ort_R  toplam_R  kar_faktoru  max_dusus_R  getiri_%  max_dusus_%
+ ADAUSD     29       65.5  0.103       3.0         1.46          1.8       1.5          0.9
+ BNBUSD     10       50.0 -0.144      -1.4         0.63          2.1      -0.7          1.0
+ BTCUSD     48       56.2 -0.035      -1.7         0.88          2.5      -0.9          1.3
+DOGEUSD     25       56.0 -0.029      -0.7         0.91          3.5      -0.4          1.7
+ ETHUSD     32       53.1 -0.095      -3.0         0.73          3.2      -1.5          1.6
+ LTCUSD     26       57.7  0.030       0.8         1.12          1.6       0.4          0.8
+ SOLUSD     25       64.0  0.060       1.5         1.23          1.9       0.8          1.0
+ XRPUSD     31       74.2  0.165       5.1         1.86          1.2       2.6          0.6
+Yıl yıl (sembol başına):
+ yil  islem  kazanma_%  ort_R  toplam_R  kar_faktoru  max_dusus_R  getiri_%  max_dusus_%
+2024     96       65.6  0.059       5.7         1.23          5.2       2.8          2.6
+2025     96       55.2 -0.030      -2.9         0.90          9.3      -1.4          4.7
+2026     34       58.8  0.020       0.7         1.08          4.8       0.3          2.4
+Çıkış türleri: {'TP': 0.58, 'ZAMAN': 0.23, 'SL': 0.19}
+Portföy Monte Carlo düşüş: {'gercek_%': 5.2, 'medyan_%': 6.0, 'p95_%': 8.4, 'p99_%': 9.4}
+
+####################################################################################################
+ KİLİTLİ DÖNEM — K2: Kripto günlük kırılım + sadece SL 2 günlük ATR ve 240 mum (hedef yok)
+####################################################################################################
+{
+ "cikis": "Cikis(sl_atr=2.0, tp_r=1e+18, be_r=1e+18, tr_bas=1e+18, tr_atr=0.0, max_mum=240, atr='d_atr')",
+ "sembol_basina": {
+  "islem": 102,
+  "kazanma_%": 45.1,
+  "ort_R": 0.323,
+  "toplam_R": 32.9,
+  "kar_faktoru": 1.78,
+  "max_dusus_R": 10.2,
+  "getiri_%": 16.5,
+  "max_dusus_%": 5.1
+ },
+ "portfoy": {
+  "islem": 55,
+  "kazanma_%": 47.3,
+  "ort_R": 0.209,
+  "toplam_R": 11.5,
+  "kar_faktoru": 1.5,
+  "max_dusus_R": 8.1,
+  "getiri_%": 5.8,
+  "max_dusus_%": 4.0,
+  "yillik_getiri_%": 2.5
+ },
+ "rastgele": {
+  "strateji_ort_R": 0.3226,
+  "rastgele_ort_R": 0.0491,
+  "fark": 0.2736,
+  "p": 0.0185,
+  "rastgele_kazanma_%": 39.5
+ },
+ "ort_R_%95": [
+  -0.15,
+  0.867
+ ]
+}
+Sembol başına:
+ sembol  islem  kazanma_%  ort_R  toplam_R  kar_faktoru  max_dusus_R  getiri_%  max_dusus_%
+ ADAUSD     12       41.7  0.414       5.0         1.81          4.2       2.5          2.1
+ BNBUSD      6       33.3  0.111       0.7         1.22          1.5       0.3          0.7
+ BTCUSD     22       50.0  0.123       2.7         1.31          3.1       1.3          1.5
+DOGEUSD     11       45.5  0.475       5.2         2.16          3.0       2.6          1.5
+ ETHUSD     14       42.9  0.225       3.2         1.55          2.3       1.6          1.1
+ LTCUSD     13       30.8 -0.178      -2.3         0.65          4.2      -1.2          2.1
+ SOLUSD     12       50.0 -0.027      -0.3         0.93          2.9      -0.2          1.4
+ XRPUSD     12       58.3  1.570      18.8         7.64          1.7       9.4          0.8
+Yıl yıl (sembol başına):
+ yil  islem  kazanma_%  ort_R  toplam_R  kar_faktoru  max_dusus_R  getiri_%  max_dusus_%
+2024     38       60.5  0.976      37.1         4.50          3.1      18.5          1.6
+2025     46       37.0 -0.029      -1.3         0.94          7.3      -0.7          3.6
+2026     18       33.3 -0.158      -2.8         0.70          3.6      -1.4          1.8
+Çıkış türleri: {'ZAMAN': 0.69, 'SL': 0.31}
+Portföy Monte Carlo düşüş: {'gercek_%': 4.0, 'medyan_%': 3.6, 'p95_%': 5.7, 'p99_%': 6.7}

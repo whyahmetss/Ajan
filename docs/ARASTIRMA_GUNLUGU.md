@@ -163,3 +163,32 @@ Getiri beklentisi (işlem başı %0.5 risk, en fazla 2 kripto pozisyonu): K2 yı
 - Karar kuralı: K2 geçerse bota K2 varsayılan olarak konur (kazanma oranının %60'ın altında olduğu
   açıkça belirtilerek). K1 de geçerse config'te seçenek olarak sunulur. Hiçbiri geçmezse bot varsayılan
   olarak işlem açmaz ve sonuç "doğrulanmış kenar yok" olarak raporlanır.
+
+### 4.8 KİLİTLİ DÖNEM SONUCU (tek açılış, 2024-07-06 → 2026-11-07) — `kayitlar/kilit.json`
+
+| | Sembol başına | Rastgele girişe karşı | Canlı portföy kuralları |
+|---|---|---|---|
+| K1 | 226 işlem, kazanma %60.2, ort +0.015R (%95 GA [−0.12, +0.12]), KF 1.06 | fark +0.038R, p = 0.157 | 132 işlem, %55.3, **−0.044R, KF 0.86, yıllık −%1.2**, düşüş %5.2 |
+| K2 | 102 işlem, kazanma %45.1, ort +0.323R (%95 GA [−0.15, +0.87]), KF 1.78 | fark +0.274R, **p = 0.019** | 55 işlem, %47.3, **+0.209R, KF 1.50, yıllık +%2.5**, düşüş %4.0 (MC %95: %5.7) |
+
+K2 yıl yıl: 2024 (Tem-Ara) +0.976R (38 işlem); 2025 −0.029R (46 işlem); 2026 −0.158R (18 işlem).
+K2 coin coin: XRP +18.8R (toplam +32.9R'nin %57'si), DOGE +5.2R, ADA +5.0R, ETH +3.2R, BTC +2.7R,
+BNB +0.7R, SOL −0.3R, LTC −2.3R.
+
+**Karar (4.7'deki kurala göre):**
+- **K1 REDDEDİLDİ.** Sembol başına tabloda sıfıra yakın (+0.015R, anlamsız), canlı portföy kurallarıyla
+  zararda. "Kazanma oranı ≥ %60" hedefini sağlayan ama para kazandıran bir strateji BULUNAMADI.
+- **K2 ölçütü geçti** (ort R > 0, KF > 1, p < 0.10) ve bota varsayılan strateji olarak konur.
+
+**K2 hakkında dürüst çekinceler:**
+1. Kazanma oranı ~%45-50. Kullanıcının %60 hedefini sağlamıyor.
+2. Kilitli dönemdeki kârın tamamı 2024 sonundaki kripto rallisinden; 2025 ve 2026 hafif negatif.
+   Strateji güçlü boğa dönemlerinde kazanıyor, diğer zamanlarda az az kaybediyor.
+3. Kâr birkaç büyük işleme ve (kilitli dönemde) tek bir coine yoğunlaşmış. %95 güven aralığı sıfırı içeriyor.
+4. Getiri küçük: işlem başı %0.5 risk ve en fazla 2 kripto pozisyonuyla yılda ~%2.5-5, düşüş ~%4-6.
+5. Etki zamanla zayıflıyor olabilir (eğitim +0.89R → TEST +0.25R → kilitli +0.32R, ama son 22 ay ≤ 0).
+6. Veri broker verisi değil; kripto CFD spread ve finansmanı modellenmiş. Pahalı broker'da kenar küçülür
+   (finansman %60/yıl ile TEST portföy +0.144R).
+
+**Toplam denenen hipotez: 11** (H0-H7, K1-K3). Ölçütlerin hepsini (kazanma oranı dahil) sağlayan: 0.
+Kazanma oranı ölçütü dışında hepsini sağlayan: 1 (K2).

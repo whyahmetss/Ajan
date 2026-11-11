@@ -1,21 +1,77 @@
 """STRATEJİNİN SAF KURALLARI (MetaTrader5'e bağımlı değil).
 Canlı bot (tarayici.py, izleme.py, risk.py) ve backtest (backtest.py) bu fonksiyonların
 AYNISINI kullanır; böylece backtest canlıda çalışan kuralı test eder.
-- yon_skoru  : 0-100 sinyal skoru
-- ust_trend  : üst zaman dilimi trendi
-- yeni_stop  : başa baş / takip eden stop
-- adima_yuvarla : lotu adımın katına aşağı yuvarlama
+
+İki strateji vardır (config.yaml > strateji.ad):
+- gunluk_kirilim : Günlük kırılım momentumu (sadece alış). Gerçek veride araştırıldı ve bir kez bakılan
+                   kilitli dönemde doğrulandı (docs/ARASTIRMA_GUNLUGU.md). VARSAYILAN.
+- trend_skor     : Zip'teki ilk strateji (EMA/ADX/kırılım skoru). Gerçek veride 2015-2024'ün her
+                   yılında ZARARDA çıktı; sadece karşılaştırma için duruyor.
+
+Ortak yardımcılar: ust_trend, yeni_stop (başa baş / takip eden stop), adima_yuvarla (lot).
 """
 from decimal import ROUND_FLOOR, Decimal
 
 import numpy as np
+import pandas as pd
 
 from . import indikator
 
+SONSUZ = 1e18           # "bu kural kapalı" anlamında eşik (ör. hedef yok, başa baş yok)
 DAKIKA = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
 UST_TREND_MIN_BAR = 210
 
 
+def aktif(cfg) -> tuple[str, dict]:
+    """(strateji adı, o stratejinin ayarları)."""
+    s = cfg.get("strateji") or {}
+    ad = s.get("ad", "trend_skor")
+    if ad not in ("gunluk_kirilim", "trend_skor"):
+        raise SystemExit(f"config: strateji.ad '{ad}' geçersiz (gunluk_kirilim | trend_skor)")
+    return ad, (s.get(ad) or {})
+
+
+# ------------------------------------------------------------------ gunluk_kirilim
+def gunluk_tablo(t, o, h, l, c, kirilim_gun: int = 20, trend_gun: int = 200) -> dict:
+    """H1 mumlarından sunucu gününe göre günlük mumlar üretir ve her H1 mumu için DÜNKÜ (kapanmış)
+    günlük değerleri döndürür: d_c (kapanış), d_sma (trend ortalaması), d_maks (son kirilim_gun günün
+    en yüksek kapanışı, dün dahil), d_atr (günlük ATR14), gun_ilk (sunucu gününün ilk H1 mumu mu)."""
+    gun = np.asarray(t, np.int64) // 86400
+    g = pd.DataFrame({"gun": gun, "o": o, "h": h, "l": l, "c": c}).groupby("gun").agg(
+        h=("h", "max"), l=("l", "min"), c=("c", "last"))
+    kap = g["c"]
+    tablo = {"d_c": kap, "d_sma": kap.rolling(trend_gun).mean(), "d_maks": kap.rolling(kirilim_gun).max(),
+             "d_atr": indikator.atr(pd.DataFrame({"high": g["h"], "low": g["l"], "close": g["c"]}))}
+    pos = np.searchsorted(g.index.to_numpy(), gun) - 1            # bir önceki (kapanmış) gün
+    out = {}
+    for k, seri in tablo.items():
+        v = seri.to_numpy(float)
+        out[k] = np.where(pos >= 0, v[np.clip(pos, 0, None)], np.nan)
+    out["gun_ilk"] = np.r_[True, gun[1:] != gun[:-1]]
+    return out
+
+
+def gunluk_kirilim_dizisi(t, o, h, l, c, prm: dict) -> tuple:
+    """Sinyal: sunucu gününün ilk H1 mumu kapandığında, dünkü günlük kapanış (a) trend ortalamasının
+    üstünde ve (b) son kirilim_gun günün en yüksek kapanışı ise ALIŞ.
+    Dönüş: (yon: 1 = sinyal / 0 = yok, skor = 100 x kapanış / trend ortalaması, günlük ATR).
+    Canlı tarayıcı son mumun değerine, backtest bütün diziye bakar: aynı fonksiyon."""
+    g = gunluk_tablo(t, o, h, l, c, int(prm.get("kirilim_gun", 20)), int(prm.get("trend_gun", 200)))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        m = g["gun_ilk"] & (g["d_c"] > g["d_sma"]) & (g["d_c"] >= g["d_maks"]) & (g["d_atr"] > 0)
+        skor = np.where(m, 100.0 * g["d_c"] / g["d_sma"], 0.0)
+    return np.where(m, 1, 0).astype(np.int8), skor, g["d_atr"]
+
+
+def gunluk_kirilim_cikis(prm: dict) -> dict:
+    """Çıkış kuralları: stop = sl x günlük ATR; hedef yok (ya da tp x günlük ATR); max_mum sonra zaman stopu.
+    Başa baş ve takip eden stop yok."""
+    sl = float(prm.get("sl_gunluk_atr", 2.0))
+    tp = prm.get("tp_gunluk_atr")
+    return {"sl_atr": sl, "tp_r": (float(tp) / sl if tp else None), "max_mum": int(prm.get("max_mum", 240))}
+
+
+# ------------------------------------------------------------------ trend_skor (eski strateji)
 def yon_skoru(d, yon: int, ust_trend: int) -> tuple[int, list[str]]:
     """yon: +1 alış, -1 satış. d: indikatörlü mumlar (en az son 3 mum). Skor ve nedenler."""
     son, onceki = d.iloc[-1], d.iloc[-2]

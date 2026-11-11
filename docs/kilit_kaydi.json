@@ -1,0 +1,87 @@
+{
+  "kilit_baslangic": 1720224000,
+  "kilit_baslangic_tarih": "2024-07-06 00:00:00",
+  "olusturma_utc": "2026-11-11T13:09:20+00:00",
+  "acilislar": [
+    {
+      "zaman_utc": "2026-11-11T13:37:05+00:00",
+      "hipotezler": [
+        "K1",
+        "K2"
+      ],
+      "sonuc": {
+        "K1": {
+          "cikis": "Cikis(sl_atr=2.0, tp_r=0.5, be_r=1e+18, tr_bas=1e+18, tr_atr=0.0, max_mum=120, atr='d_atr')",
+          "sembol_basina": {
+            "islem": 226,
+            "kazanma_%": 60.2,
+            "ort_R": 0.015,
+            "toplam_R": 3.5,
+            "kar_faktoru": 1.06,
+            "max_dusus_R": 10.1,
+            "getiri_%": 1.7,
+            "max_dusus_%": 5.1
+          },
+          "portfoy": {
+            "islem": 132,
+            "kazanma_%": 55.3,
+            "ort_R": -0.044,
+            "toplam_R": -5.9,
+            "kar_faktoru": 0.86,
+            "max_dusus_R": 10.4,
+            "getiri_%": -2.9,
+            "max_dusus_%": 5.2,
+            "yillik_getiri_%": -1.2
+          },
+          "rastgele": {
+            "strateji_ort_R": 0.0154,
+            "rastgele_ort_R": -0.0221,
+            "fark": 0.0375,
+            "p": 0.1565,
+            "rastgele_kazanma_%": 53.4
+          },
+          "ort_R_%95": [
+            -0.122,
+            0.115
+          ]
+        },
+        "K2": {
+          "cikis": "Cikis(sl_atr=2.0, tp_r=1e+18, be_r=1e+18, tr_bas=1e+18, tr_atr=0.0, max_mum=240, atr='d_atr')",
+          "sembol_basina": {
+            "islem": 102,
+            "kazanma_%": 45.1,
+            "ort_R": 0.323,
+            "toplam_R": 32.9,
+            "kar_faktoru": 1.78,
+            "max_dusus_R": 10.2,
+            "getiri_%": 16.5,
+            "max_dusus_%": 5.1
+          },
+          "portfoy": {
+            "islem": 55,
+            "kazanma_%": 47.3,
+            "ort_R": 0.209,
+            "toplam_R": 11.5,
+            "kar_faktoru": 1.5,
+            "max_dusus_R": 8.1,
+            "getiri_%": 5.8,
+            "max_dusus_%": 4.0,
+            "yillik_getiri_%": 2.5
+          },
+          "rastgele": {
+            "strateji_ort_R": 0.3226,
+            "rastgele_ort_R": 0.0491,
+            "fark": 0.2736,
+            "p": 0.0185,
+            "rastgele_kazanma_%": 39.5
+          },
+          "ort_R_%95": [
+            -0.15,
+            0.867
+          ]
+        }
+      },
+      "zorla": false
+    }
+  ]
+}
