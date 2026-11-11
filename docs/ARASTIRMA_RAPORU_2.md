@@ -1,0 +1,281 @@
+# Araştırma Raporu 2 ve Test Planı — dış repolardan strateji / risk fikirleri
+
+Tarih: 2026-11-11. Durum: **sadece rapor ve plan.** Bu belgede anlatılan hiçbir strateji henüz kodlanmadı,
+test edilmedi ve bota eklenmedi. Onaydan sonra Bölüm 6'daki sırayla ilerlenecek.
+
+Değişmeyenler: `sadece_demo: true` kilidi yerinde kalır, gerçek hesapta emir yetkisi eklenmez, risk kuralları
+(işlem başı %0.5, günlük %2, lot hesabı) LLM'den bağımsız kalır.
+
+İncelenen repolar (salt okunur incelendi, içlerinden hiçbir kod çalıştırılmadı ve projeye kopyalanmadı):
+
+| Repo | İncelenen sürüm | Ne olduğu |
+|---|---|---|
+| Jakeschincariol/day-trader-skill | 3d0f4ef | ABD hisseleri için gün içi işlem yardımcı aracı (tarayıcı, ORB girişi, risk kapısı) |
+| freqtrade/freqtrade-strategies | f3340ce | Freqtrade için 66 örnek kripto stratejisi |
+| QuantConnect/Lean | ana dal, sığ kopya | Olay güdümlü backtest/canlı işlem motoru (C#), örnek alfa/risk/maliyet modelleri |
+
+---
+
+## 1. Repolardan ne çıktı
+
+### 1.1 day-trader-skill
+- **Kenar kanıtı yok.** Repo kendi belgesinde "gün içi işlem çoğu insana para kaybettirir" diyor; hiçbir
+  backtest sonucu, işlem kaydı ya da maliyet sonrası performans yok. Kurallar bir fikir kaynağıdır, kanıt değil.
+- ORB kuralı: seansın ilk 15 dakikası (üç 5 dk mum) aralık; tetik = aralığın üstünde **kapanan** ilk mum
+  (fitil değil kapanış); isteğe bağlı hacim onayı (tetik mumunun hacmi, aralık mumlarının ortalamasının
+  katı); 09:45'ten önce / 15:30'dan sonra giriş yok; 15:55'te düz. Stop: aralık ortası (varsayılan), aralık
+  dibi, yüzde ya da ATR×K. Hedef 2R. Sadece alış.
+- Günlük kurulumlar: 20 günlük kapanış kırılımı, boğa bayrağı, MA20 geri alma, RSI14<30.
+- **İşe yarar risk fikirleri:**
+  1. Günlük zarar bütçesinde bugün açılan bütün işlemlerin *tam azami zararını* saymak (Ajan zaten açık riski
+     sayıyor — uyumlu).
+  2. Girişi "plan fiyatı ile taze fiyatın kötü olanından" ölçmek (Ajan'da kayma referansı zaten böyle).
+  3. Günlük azami işlem sayısı, giriş saat penceresi, aynı sembolde tekrar giriş engeli.
+  4. Başa baş kazanma oranı = 1/(1+R) tablosu: hedef/stop oranına göre WR'nin tek başına anlamsız olduğunu
+     gösterir (bizim H1–H7 bulgumuzla aynı ders).
+
+### 1.2 freqtrade-strategies
+- 66 stratejinin çoğu 1m/5m, sadece alış, kripto. Hyperopt çıktısı ROI tabloları, %−25…−35 stoplar ve 5 haneli
+  parametreler aşırı uydurma işareti. Repoda hiçbir strateji için örneklem dışı sonuç yok.
+- H1/H4'e uyanlar ve kuralları:
+
+| Strateji | ZD | Kural | Aile |
+|---|---|---|---|
+| BbandRsi | 1h | RSI<30 ve kapanış < alt Bollinger; çıkış RSI>70 | ortalamaya dönüş |
+| ADXMomentum | 1h | ADX>25, momentum>0, +DI>25, +DI>−DI | trend devamı |
+| hlhb | 4h | RSI 50'yi keser, EMA5 EMA10'u keser, ADX>25 | trend devamı |
+| futures/VolatilitySystem | 1h (3h'e yeniden örneklenmiş) | 3 saatlik kapanış değişimi > 2×ATR(14) → o yönde gir; ters sinyalde çevir; alış ve satış | oynaklık kırılımı |
+| futures/TrendFollowingStrategy | — | fiyat trend çizgisinin üstünde ve OBV yükseliyor | trend + hacim |
+| Supertrend, AdxSmas, AwesomeMacd | 1h | klasik gösterge kesişimleri | trend |
+| HourBasedStrategy | 1h | günün saatine göre al/sat | mevsimsellik (aşırı uydurmaya çok açık) |
+
+- **Hacim kullanımı:** neredeyse hep "pump'tan kaçın" filtresi (hacim < 20×ortalama) ya da "hacim > 0";
+  kırılımı hacimle *onaylayan* bir örnek yok (OBV'li tek örnek hariç).
+- **Gelecek verisi hatası dersi** (`lookahead_bias/` klasörü): DevilStra, GodStraNew, Zeus normalleştirmede
+  bütün seri üzerinde `.min()/.max()` kullanıyor; wtc `MinMaxScaler.fit_transform` kullanıyor. Yani hata
+  "tüm seriden hesaplanan istatistik". Ayrıca Strategy004 içindeki yorum da `volume.mean()`'in bütün veriyi
+  kullandığını not ediyor. Bölüm 4.2'deki korumalar bu hatayı hedefliyor.
+
+### 1.3 QuantConnect Lean
+- Hazır strateji kaynağı değil, motor. Alfa modelleri bilerek basit: RSI 30/70 (35/65 histerezisli),
+  MACD, EMA kesişimi, geçmiş getiri. Hiçbiri kenar iddiası taşımıyor. ORB örneği yok.
+- **İşe yarar tasarım fikirleri:**
+  1. Katman ayrımı: Alfa (sinyal) → Portföy → **Risk (bağımsız, son sözü söyler)** → Emir. Ajan'ın "risk LLM'den
+     bağımsız" kuralıyla aynı felsefe; yeni stratejiler de sadece "aday" üretecek, risk katmanına dokunmayacak.
+  2. `MaximumDrawdownPercentPortfolio(is_trailing)`: portföy düşüşü başlangıca (statik) ya da zirveye (takip
+     eden) göre ölçülür ve aşılınca her şey kapatılır. Prop firma "toplam zarar" kuralının iki türünün bire
+     bir karşılığı → simülasyonda ikisi de modellenecek (Bölüm 4.4).
+  3. `TrailingStopRiskManagementModel`: pozisyon başına en iyi değerden % geri çekilme stopu → K2 için
+     denenmemiş "takip eden çıkış" hipotezi (Bölüm 3, T2).
+  4. `SpreadExecutionModel`: spread fiyatın belli bir yüzdesinden genişse emir gönderme. Ajan'da azami spread
+     filtresi var; backtest'te de aynı filtre uygulanmalı (parite).
+  5. Maliyet modelleri: `ConstantSlippageModel` (fiyatın sabit yüzdesi), `VolumeShareSlippageModel` (emir /
+     mum hacmi)² × etki — ancak Lean'in kendisi Forex/CFD/kriptoda hacim bildirilmediği için bu modelin 0
+     döndüğünü logluyor; yani bizim enstrümanlarda hacme dayalı kayma modeli kurulamaz, sabit/spread katı
+     modeli kullanılacak. `FxcmFeeModel`: majörlerde taraf başı 1k lot için 0.04 USD (gidiş-dönüş ≈ %0.008),
+     diğer paritelerde 0.06 USD (≈ %0.012). **Bizim varsayımımız %0.007 idi → hafif iyimser**; yeni testlerde
+     %0.008 / %0.012 kullanılacak.
+  6. Olay güdümlü yapı ve ısınma (warm-up): gösterge ancak yeterli geçmiş birikince "hazır" sayılır; günlük
+     mum ancak gün kapanınca oluşur. Bizim "kapanmış mum + önceki günün D1 değeri" kuralımızın aynısı.
+
+**Özet:** Üç repoda da doğrulanmış, maliyet sonrası kârlı bir strateji yok. Alınabilecek olan şey kural
+şablonları (ORB, oynaklık kırılımı, BB+RSI), risk/maliyet modelleme fikirleri ve gelecek verisi hatası
+örnekleridir. Kenar olup olmadığını kendi verimizde ölçmek zorundayız.
+
+---
+
+## 2. Dört strateji ailesinin değerlendirmesi ve mevcut Ajan ile karşılaştırma
+
+Mevcut durum (`docs/ARASTIRMA_GUNLUGU.md`): 11 hipotez denendi (H0–H7, K1–K3). Bota konan tek strateji
+**K2 = `gunluk_kirilim`** (sadece kripto, sadece alış).
+
+| | İşlem | WR | Ort R | PF | Yıllık | Azami düşüş |
+|---|---|---|---|---|---|---|
+| K2 eğitim (portföy) | 114 | %50.9 | +0.59 | 2.62 | — | — |
+| K2 TEST (portföy) | 85 | %45.9 | +0.24 | 1.61 | ~%3.6 | %4.2 |
+| K2 kilitli (tek açılış) | 55 | %47.3 | +0.21 | 1.50 | ~%2.5 | %4.0 |
+| Eski zip stratejisi (trend_skor) TEST | — | — | −0.09 | 0.85 | negatif | — |
+
+K2'nin bilinen zayıflıkları: getiri küçük, WR %60 hedefinin altında, kâr birkaç büyük işleme bağlı, 55 işlemlik
+kilitli örneklem küçük (p = 0.019), sadece kripto.
+
+| Aile | Daha önce denenen | Sonuç | Bu turda yeni olan | Dürüst ön beklenti |
+|---|---|---|---|---|
+| **ORB** | Hiç | — | Seans açılışı aralık kırılımı (M15); forex/endeks/altın | Belirsiz. Gün içi olduğu için stop dar → spread/komisyon R cinsinden pahalı. En büyük risk maliyet. |
+| **Kırılım + hacim onayı** | K1/K2 (hacimsiz) | K2 geçti, K1 kaldı | K2 sinyaline hacim şartı; ORB'ye hacim şartı | Hacim sadece kriptoda gerçek (aşağıya bak). İşlem sayısını azaltacağı kesin, kaliteyi artıracağı belirsiz. |
+| **Trend devamı** | H0 (skor), H3 (forex geri çekilme), H5, K3 (H1 z≥2) | Hepsi kaldı | Oynaklık kırılımı (VolatilitySystem tarzı, H4), K2'ye takip eden stop | Düşük–orta. Olay incelemesinde forex/endeks/emtiada yön bilgisi bulunmadı; kriptoda var. |
+| **Ortalamaya dönüş** | H1, H2, H6, H7 (trendde dip alımı), H4 (Asya seansı) | Hepsi kaldı (WR %58–65 ama rastgele giriş de %63–65) | Yatay rejim filtreli (ADX düşük) Bollinger dönüşü, çapraz paritelerde, H4 | Düşük. Önceki 5 denemenin hiçbiri rastgele girişi geçemedi. |
+
+**Hacim verisi kısıtı (önemli):** elimizdeki veride gerçek hacim sadece Binance'te var (şu an işlem *sayısı*
+saklanıyor; işlem *hacmi* için yeniden indirme gerekir). FXCM verisinde hacim yok (sabit 60 yazılmış),
+HistData'da sadece M1 mum sayısı var. MT5'in forex/CFD'de verdiği de tick hacmidir ve brokerdan brokera
+değişir. Bu yüzden "hacim onayı" hipotezi **yalnızca kriptoda** dürüstçe test edilebilir; forex/endekste
+tick hacmiyle bulunan bir sonuç başka brokerda tekrarlanmayabilir ve bu turda test edilmeyecek.
+
+**%60 WR hedefi hakkında:** önceki bulgu geçerli. WR, hedef/stop oranının bir fonksiyonu; kenar ölçütü
+değil. Bu turda da asıl ölçütler beklenti (ort R), PF ve rastgele girişe karşı test olacak; WR raporlanacak
+ama tek başına kabul sebebi olmayacak.
+
+---
+
+## 3. Ön kayıtlı adaylar (test edilmeden ÖNCE yazıldı)
+
+Kurallar bu belgeyle donduruldu. Toplam 6 yeni hipotez; önceki 11 ile birlikte 17. Her aday sonuçtan
+bağımsız raporlanacak. Parametreler kaynak repolardaki varsayılanlardan ya da yuvarlak değerlerden alındı;
+hiçbiri veriye bakılarak seçilmedi.
+
+| # | Aile | Evren | ZD | Giriş | Çıkış |
+|---|---|---|---|---|---|
+| **O1** | ORB | Londra açılışı (08:00 Londra): EURUSD, GBPUSD, EURGBP, EURJPY, GBPJPY, GER40, UK100, EU50. New York açılışı (09:30 NY): US500, US100, XAUUSD | M15 | Aralık = açılıştan sonraki ilk 2 M15 mumu (30 dk). Açılıştan sonraki 3 saat içinde aralığın dışında **kapanan** ilk M15 mumunun kapanışında, kırılım yönünde (alış ve satış). Sembol başına günde 1 işlem. | Stop: aralığın karşı kenarı. Hedef yok. Seans sonunda kapat (Londra grubu 16:30 Londra, NY grubu 15:55 NY). |
+| **O2** | ORB | O1 ile aynı | M15 | O1 ile aynı | Stop aynı; hedef +1R; seans sonunda kapat. (Yüksek WR sürümü.) |
+| **V1** | Kırılım + hacim | Kripto (8 coin, Binance gerçek hacim) | H1 (günlük sinyal) | K2 sinyali **ve** kırılım gününün hacmi ≥ önceki 20 günün ortalamasının 1.5 katı | K2 ile aynı (SL 2 günlük ATR, 240 mum) |
+| **T1** | Trend devamı (oynaklık kırılımı) | Bütün sınıflar; sınıf sınıf ayrı raporlanır | H4 | Son kapanan H4 mumunun kapanış değişimi, bir önceki mumdaki 2×ATR(14, H4)'ten büyükse o yönde gir (alış ve satış) | SL 2×ATR(H4); ters sinyalde kapat; 60 mum (10 gün) zaman stopu |
+| **T2** | Trend devamı (çıkış iyileştirme) | Kripto | H1 | K2 sinyali | Başlangıç SL 2 günlük ATR; sonra girişten beri en yüksek günlük kapanış − 3 günlük ATR takip eden stop (sadece gün kapanışında güncellenir); zaman stopu yok |
+| **M1** | Ortalamaya dönüş | Forex çaprazları: EURGBP, AUDNZD, EURAUD, AUDJPY, CADJPY + USDCHF, USDCAD | H4 | ADX(14)<20 **ve** kapanış Bollinger(20, 2.0) bandının dışında → banda ters yönde gir | Hedef: SMA20 (her mumda güncellenir); SL 2×ATR(H4); 30 mum zaman stopu |
+
+Kıyas tabanları: **K2 (mevcut)** ve aynı çıkış geometrisiyle **rastgele giriş**. V1 ve T2 doğrudan K2 ile
+karşılaştırılır (aynı sinyal ailesi); "iyileşme" = eğitim + doğrulamada K2'den daha iyi ort R **ve** daha
+kötü olmayan azami düşüş.
+
+Bilerek dışarıda bırakılanlar: saat-bazlı strateji (HourBasedStrategy — çoklu test riski çok yüksek),
+hyperopt ile bulunmuş ROI tabloları, forex/endekste tick hacmi onayı, kriptoda ORB (seans açılışı yok).
+
+---
+
+## 4. Test planı
+
+### 4.1 Modül yapısı — mevcut sistemi bozmadan
+```
+arastirma/stratejiler/
+    __init__.py        ortak arayüz: sinyal(sembol_verisi, prm) -> (yön dizisi, stop mesafesi dizisi, çıkış tanımı)
+    orb.py             O1, O2
+    hacim_kirilim.py   V1
+    oynaklik.py        T1
+    takip_cikis.py     T2
+    bant_donus.py      M1
+arastirma/prop.py      prop firma kural simülasyonu (4.4)
+arastirma/deney2.py    bu planın koşucusu (dönemler, tablolar, eleme)
+tests/test_stratejiler.py, tests/test_prop.py
+```
+- `bot/` altındaki hiçbir dosya değişmeyecek; `config.yaml` değişmeyecek; mevcut 220 test aynen geçmeli.
+- Stratejiler mevcut `arastirma/motor.py` simülatörünü kullanacak (aynı maliyet ve dolum kuralları → K2 ile
+  elma-elma kıyas). Motora eklenecekler: kayma parametresi, M15 veri desteği, seans sonu çıkışı, H1
+  bazında değerlenmiş (mark-to-market) özvarlık eğrisi.
+- Bir strateji ancak bütün ölçütleri geçer ve siz onay verirseniz `bot/strateji.py`'ye taşınır (ayrı bir iş).
+
+### 4.2 Gelecek verisine bakmayı önleme
+1. Sinyal sadece **kapanmış** mumdan hesaplanır; giriş bir sonraki mumun açılışından (O1/O2'de tetik mumunun
+   kapanışı = sonraki mumun açılışı) yapılır.
+2. Günlük değerler (ATR, zirve, hacim ortalaması) **önceki günün** kapanışına kadar olan veriden gelir.
+3. Bütün seriden hesaplanan istatistik yasak (min/max/ortalama/ölçekleme sadece geriye bakan pencereyle) —
+   freqtrade `lookahead_bias` örneklerindeki hata.
+4. **Otomatik kesme testi** (her modül için birim testi): sinyal dizisi tam veriyle ve verinin t anında
+   kesilmiş haliyle hesaplanır; t'ye kadarki değerler bit bit aynı olmalı. Rastgele 50 kesme noktası.
+5. **Gecikme testi**: sinyali 1 mum geciktirince sonuç dramatik iyileşiyorsa ya da 1 mum öne alınca
+   (bilerek hata) sonuç aynı kalıyorsa sızıntı şüphesi → incelenir.
+6. Seans saatleri yaz/kış saati dahil yerel saatten (Londra, New York) hesaplanır; sabit UTC ofseti kullanılmaz.
+7. Aynı mumda stop ve hedef görülürse stop sayılır (mevcut kural); boşlukla stop aşılırsa açılıştan dolar.
+
+### 4.3 Maliyetler: spread, komisyon, kayma, finansman
+| Kalem | Temel senaryo | Stres |
+|---|---|---|
+| Spread | Veri kaynağındaki gerçek/modellenmiş spread (mevcut) | ×1.5 ve ×2 |
+| Komisyon | Forex majör %0.008, diğer %0.012 gidiş-dönüş (Lean FXCM modeli); kripto/endeks mevcut değerler | ×2 |
+| Kayma (yeni) | Piyasa girişinde ve stop çıkışında, aleyhte 0.25 × o mumun spread'i | 0.5× ve 1× spread; stop çıkışında ayrıca 0.05 × ATR |
+| Finansman/swap | Mevcut model | ×3 |
+| Spread filtresi | Botla aynı azami spread kuralı backtest'te de uygulanır | — |
+
+ORB için ek kontrol: stop mesafesi / (spread + komisyon) oranı raporlanır. Maliyet, ortalama stop mesafesinin
+%10'undan fazlaysa bu ayrıca belirtilir (gün içi stratejilerin tipik ölüm sebebi).
+
+### 4.4 Prop firma zarar limitleri simülasyonu
+H1 bazında değerlenmiş özvarlık eğrisi üzerinde, portföy kurallarıyla (işlem başı %0.5, günlük %2 dahil):
+
+| Kural | Değerler |
+|---|---|
+| Günlük zarar limiti | %5 ve %4; gün başı bakiyesine göre, **açık pozisyonların yüzen zararı dahil** (gün içi en düşük özvarlık) |
+| Toplam zarar limiti | %10 statik (başlangıca göre) ve %10 / %6 takip eden (zirveye göre) |
+| Kâr hedefi | 1. aşama %8 ve %10, 2. aşama %5 |
+| Süre | Süresiz ve 30/60 günlük sürümler; asgari 4 işlem günü |
+
+Yöntem: her hafta başından bir "değerlendirme" başlatılır (yüzlerce örtüşen başlangıç). Raporlanan:
+geçme oranı, limit ihlaliyle başarısız olma oranı, sonuçlanmayanların oranı, hedefe medyan süre, en kötü
+gün, limite en yakın mesafe. Ayrıca işlem sırası karıştırılarak (haftalık blok) Monte Carlo ile %95 aralık.
+Gün içi mum içi hareket bilinmediği için günlük limit kontrolü mumun en kötü fiyatıyla (alışta dip, satışta
+tepe + spread) yapılır — kötümser taraf.
+
+Önceden belirtmek gerekir: K2 düzeyinde bir getiriyle (yılda ~%3) %8–10 hedefe ulaşmak yıllar sürer; işlem
+başı risk %0.5 kuralı sabit kaldığı sürece prop değerlendirmesinde "ihlal" olasılığı düşük ama "hedefe
+ulaşamama" olasılığı yüksek çıkması beklenir. Sonuç neyse o raporlanacak; riski artırarak hedefe yetiştirme
+denenmeyecek.
+
+### 4.5 Veri ayrımı: eğitim / doğrulama / hiç dokunulmamış test
+| Bölüm | Tarih | Kullanım | Dürüstlük notu |
+|---|---|---|---|
+| Eğitim | 2015-03-03 → 2021-09-16 | Kural hatalarını ayıklama, V1/T2'nin K2 ile kıyası, O1/O2 arasından seçim | Serbestçe bakılır |
+| Doğrulama | 2021-09-16 → 2024-07-06 | Eğitimde seçilen sürümün onayı; ayar yapılmaz | Bu dönem önceki 11 hipotezde "TEST" olarak kullanıldı; artık bakir değil, o yüzden adı doğrulama |
+| **Dokunulmamış test** | 2024-07-06 → 2026-11-07 | En sonda, **tek sefer**, sadece doğrulamayı geçen adaylar | Sınıfa göre durum aşağıda |
+| İleriye dönük | 2026-11-07 sonrası | Demo/sinyal modu kayıtları (`araclar.py rapor`) | Gerçekten görülmemiş tek veri |
+
+Dokunulmamış test döneminin gerçek durumu:
+- **Forex, endeks, emtia:** bu dönemde bugüne kadar hiçbir stratejinin sonucuna bakılmadı → O1, O2, T1
+  (kripto dışı), M1 için gerçekten bakir.
+- **Kripto:** bu dönem K1/K2 için bir kez açıldı. V1 ve T2 için bakir **değil**. Bu yüzden V1/T2 için
+  geçmiş veride "dokunulmamış test" iddia edilmeyecek; kabul için ek olarak en az 3 ay ileriye dönük demo
+  kaydı şart koşulacak ve kilitli dönem sonucu "ikinci bakış" etiketiyle raporlanacak.
+- M15 verisi (ORB için) yeniden indirilecek (HistData M1, FXCM m1). İndirme sırasında kilit sınırından
+  sonraki veriler ayrı dosyaya yazılacak ve son adıma kadar hiçbir tabloya girmeyecek.
+- Kilit açılışı `kayitlar/kilit.json`'a ikinci kayıt olarak yazılır (tarih, hangi adaylar, donmuş kural özeti).
+
+Ek doğrulamalar (eğitim + doğrulama üzerinde): yıl yıl tablo, yürüyen pencere (walk-forward), ±%20 komşu
+parametreler, rastgele girişe karşı permütasyon (aynı sembol/yıl/yön dağılımı, aynı çıkış), haftalık blok
+bootstrap güven aralığı, Monte Carlo azami düşüş %95 aralığı, sınıf ve sembol kırılımı.
+
+### 4.6 Karşılaştırma tablosu (her aday × her dönem, portföy kurallarıyla)
+İşlem sayısı · WR · ortalama R (beklenti) · PF · azami düşüş (% ve R) · yıllık getiri · rastgele girişe karşı
+p · maliyet stresi sonrası ort R · prop geçme/ihlal oranı. K2 ve rastgele giriş aynı tabloda taban olarak yer alır.
+
+### 4.7 Eleme ölçütleri (sonuçlara bakmadan önce sabitlendi)
+Bir aday aşağıdakilerin **hepsini** sağlamazsa elenir ve "elendi" olarak raporlanır:
+
+1. Doğrulamada maliyet + temel kayma sonrası ort R ≥ +0.05 ve PF ≥ 1.2.
+2. İşlem sayısı: eğitimde ≥ 200, doğrulamada ≥ 80 (V1/T2 için ≥ 100 / ≥ 40; daha azı "yetersiz örneklem" → elenir).
+3. Rastgele girişe karşı permütasyon p < 0.05/6 ≈ 0.008 (6 yeni hipotez için Bonferroni düzeltmesi), doğrulamada.
+4. Spread ×1.5 + kayma 0.5× spread senaryosunda ort R > 0.
+5. ±%20 komşu parametrelerin hepsinde ort R > 0.
+6. Geliştirme döneminde yılların ≥ %70'i pozitif.
+7. V1 ve T2 için ek: K2'ye göre ort R'de iyileşme, haftalık blok bootstrap ile farkın %90 aralığı sıfırın
+   üstünde. (Sadece "biraz daha iyi görünüyor" yetmez.)
+8. Dokunulmamış test (tek sefer): ort R > 0 ve PF > 1.0.
+9. Prop simülasyonunda limit ihlali oranı ≤ %5 (statik %10 / günlük %5 kurallarıyla).
+
+WR ≥ %60 ayrıca raporlanır. Ölçüt 1–9'u geçen adaylar arasında WR ≥ %60 olan varsa tercih sebebidir; ama
+ölçütleri geçmeyen bir aday WR'si yüksek diye kabul edilmez.
+
+Hiçbir aday geçmezse sonuç "iyileşme yok, K2 ile devam" olarak raporlanır. Altı adaydan birinin şans eseri
+iyi görünme olasılığı yüksek olduğu için eşikler bilerek sıkıdır.
+
+---
+
+## 5. Açık riskler ve sınırlamalar
+- **Beklenti düşük tutulmalı.** Önceki 11 hipotezden 1'i geçti. Forex/endeks/emtiada olay incelemesi yön
+  bilgisi bulamadı; bu turdaki adayların çoğu yine bu sınıflarda. En olası sonuç: adayların çoğu elenir.
+- Kripto için bakir geçmiş veri kalmadı; V1/T2 ancak ileriye dönük kayıtla kesinleşir.
+- ORB'nin M15 verisi gerektirmesi: botun tarama döngüsü H1'e göre kurulu. O1/O2 geçerse bota taşımak
+  (M15 tarama, seans sonu kapatma) ayrı ve daha büyük bir iş; testten önce yapılmayacak.
+- Veri brokerınızın verisi değil (bu ortamdan MT5'e erişim yok). Endeks spreadleri modellenmiş. Gün içi
+  stratejiler spread varsayımına en duyarlı olanlar.
+- Kayma modeli varsayım; gerçek kayma ancak demo kayıtlarından ölçülür.
+- Prop simülasyonu belirli bir firmanın kural metnini değil, yaygın kural tiplerini modelliyor. Hedef
+  firma belli olursa kuralları birebir girilmeli.
+- Komisyon varsayımı önceki testlerde hafif iyimserdi (%0.007 ↔ %0.008–0.012). Önceki forex sonuçları zaten
+  negatifti; sonucu değiştirmez ama not edildi.
+
+## 6. Onay sonrası adımlar
+1. Motor eklemeleri (kayma, M15, seans çıkışı, saatlik özvarlık) + birim testleri; mevcut K2 sonuçlarının
+   kayma = 0 ile birebir aynı çıktığının kontrolü.
+2. M15 verisinin indirilmesi; kilit sonrası verinin ayrılması.
+3. Altı modül + kesme (lookahead) testleri.
+4. Eğitim → doğrulama → sağlamlık → prop simülasyonu; eleme tablosu. **Burada durup rapor.**
+5. Kalan aday varsa: onayınızla dokunulmamış test (tek sefer) → rapor.
+6. Geçen olursa: bota taşıma önerisi (ayrı onay), önce sinyal/demo modunda ileriye dönük izleme.
