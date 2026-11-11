@@ -1,0 +1,9 @@
+# Testler için (MetaTrader5 GEREKMEZ: testler sahte modül kullanır, Linux'ta da çalışır)
+pandas>=2.0
+numpy>=1.24
+pyyaml>=6.0
+python-dotenv>=1.0
+anthropic>=2.8
+openai>=1.40
+requests>=2.31
+pytest>=8.0

@@ -1,4 +1,6 @@
-"""Ekonomik takvim (ForexFactory haftalık JSON). Başarısız olursa bot çalışmaya devam eder."""
+"""Ekonomik takvim (ForexFactory haftalık JSON).
+Takvim alınamazsa ya da önbellek bayatsa takvim() bunu bildirir (ok=False); filtre ajanı bu
+durumda varsayılan olarak yeni işlem açmaz (config: haber.takvim_yoksa_islem_yok)."""
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -6,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 log = logging.getLogger("haber")
-_onbellek = {"zaman": 0, "veri": []}
+_onbellek = {"zaman": 0.0, "veri": [], "son_deneme": 0.0}
 
 ENDEKS_DOVIZ = {
     "US30": "USD", "US100": "USD", "US500": "USD", "NAS": "USD", "SPX": "USD", "USTEC": "USD",
@@ -32,29 +34,45 @@ def sembol_dovizleri(sembol: str, sinif: str) -> set[str]:
     return {x for x in (b, q) if x in DOVIZLER} or {"USD"}
 
 
-def takvim(cfg) -> list[dict]:
-    if not cfg["haber"]["aktif"]:
-        return []
-    if time.time() - _onbellek["zaman"] < 3600 and _onbellek["veri"]:
-        return _onbellek["veri"]
-    try:
-        r = requests.get(cfg["haber"]["kaynak"], timeout=10,
-                         headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        veri = []
-        for e in r.json():
-            try:
-                z = datetime.fromisoformat(e["date"]).astimezone(timezone.utc)
-            except Exception:
-                continue
-            veri.append({"baslik": e.get("title"), "doviz": e.get("country"),
-                         "zaman": z, "etki": e.get("impact"),
-                         "beklenti": e.get("forecast"), "onceki": e.get("previous")})
-        _onbellek.update(zaman=time.time(), veri=veri)
-        log.info("Ekonomik takvim güncellendi: %d olay", len(veri))
-    except Exception as ex:
-        log.warning("Takvim alınamadı (%s). Haber filtresi bu tur devre dışı.", ex)
-    return _onbellek["veri"]
+def _hafta(ts: float) -> int:
+    """Pazar başlangıçlı hafta numarası (ForexFactory 'thisweek' haftası, UTC)."""
+    return int((ts // 86400 + 4) // 7)       # 1970-01-01 Perşembe; +4 -> hafta Pazar başlar
+
+
+def takvim(cfg) -> tuple[list[dict], bool]:
+    """(olaylar, takvim_ok). takvim_ok=False: güncel takvim yok, haber filtresi güvenilmez."""
+    h = cfg["haber"]
+    if not h["aktif"]:
+        return [], True
+    simdi = time.time()
+    # Başarılı veri saatte bir yenilenir; başarısız denemeden sonra 5 dk beklenir (rate limit)
+    if simdi - _onbellek["zaman"] >= 3600 and simdi - _onbellek["son_deneme"] >= 300:
+        _onbellek["son_deneme"] = simdi
+        try:
+            r = requests.get(h["kaynak"], timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            veri = []
+            for e in r.json():
+                try:
+                    z = datetime.fromisoformat(e["date"])
+                except Exception:
+                    continue
+                if z.tzinfo is None:         # saat dilimi yoksa yorumlanamaz, atla
+                    continue
+                veri.append({"baslik": e.get("title"), "doviz": e.get("country"),
+                             "zaman": z.astimezone(timezone.utc), "etki": e.get("impact"),
+                             "beklenti": e.get("forecast"), "onceki": e.get("previous")})
+            _onbellek.update(zaman=simdi, veri=veri)
+            log.info("Ekonomik takvim güncellendi: %d olay", len(veri))
+        except Exception as ex:
+            log.warning("Takvim alınamadı (%s)", ex)
+    yas = simdi - _onbellek["zaman"]
+    ok = (_onbellek["zaman"] > 0 and yas <= h.get("max_bayatlik_saat", 6) * 3600
+          and _hafta(_onbellek["zaman"]) == _hafta(simdi))
+    if not ok:
+        log.warning("Ekonomik takvim güncel değil (son başarılı alım: %s)",
+                    "hiç" if not _onbellek["zaman"] else f"{yas / 3600:.1f} saat önce")
+    return _onbellek["veri"], ok
 
 
 def yakin_olaylar(olaylar, dovizler: set[str], saat: int = 24) -> list[dict]:

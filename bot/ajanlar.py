@@ -5,19 +5,25 @@
   4) Risk   (LLM)  : SL/TP yerleşimi, R:R ve zamanlama kalitesi
   5) Filtre (KOD)  : spread, haber blackout, pozisyon/döviz limitleri, günlük zarar.
                      LLM değildir, kandırılamaz, önce o çalışır.
+
+Bir ajan hata verirse (API hatası, bozuk/eksik JSON, geçersiz oy) oyu "HATA" olur:
+destek sayılmaz; veto yetkili Ayı'da ise aday reddedilir (karar.oy_sayimi).
 """
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 from . import haber
 
 log = logging.getLogger("ajanlar")
 
+GECERLI_OYLAR = ("DESTEK", "KARSI", "NOTR")
+
 ORTAK = (
     "Sen profesyonel bir trading masasında çalışan bir analistsin. Sana bir sembol için "
     "teknik veriler, son mumlar, yaklaşan ekonomik olaylar ve açık pozisyonlar verilecek. "
-    "Gelecek fiyatları bilemezsin; uydurma bilgi, uydurma haber kullanma. "
+    "Mum saatleri UTC'dir. Gelecek fiyatları bilemezsin; uydurma bilgi, uydurma haber kullanma. "
     "Sadece verilen veriye dayan. Emin değilsen NOTR de. Türkçe yaz, kısa ve net ol."
 )
 
@@ -47,37 +53,52 @@ ROLLER = {
 
 def baglam_olustur(aday: dict, plan: dict, olaylar: list, pozisyonlar: list) -> str:
     dov = haber.sembol_dovizleri(aday["sembol"], aday["sinif"])
+    d = aday["digits"]
     veri = {
+        "simdi_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
         "sembol": aday["sembol"], "varlik_sinifi": aday["sinif"],
         "onerilen_yon": aday["yon"], "tarayici_skoru": aday["skor"],
         "tarayici_nedenleri": aday["nedenler"],
         "ust_zaman_dilimi_trendi": {1: "yukari", -1: "asagi", 0: "yatay"}[aday["ust_trend"]],
-        "fiyat": aday["fiyat"], "ATR": round(aday["atr"], aday["digits"]),
+        "fiyat": aday["fiyat"], "ATR": round(aday["atr"], d),
         "RSI": round(aday["rsi"], 1), "ADX": round(aday["adx"], 1),
-        "EMA20": round(aday["ema20"], aday["digits"]), "EMA50": round(aday["ema50"], aday["digits"]),
-        "EMA200": round(aday["ema200"], aday["digits"]),
-        "plan": {"giris": plan["giris"], "stop": plan["sl"], "hedef": plan["tp"], "R_R": plan["rr"]},
-        "son_24_mum [zaman, acilis, yuksek, dusuk, kapanis]": aday["son_mumlar"],
+        "EMA20": round(aday["ema20"], d), "EMA50": round(aday["ema50"], d),
+        "EMA200": round(aday["ema200"], d),
+        "plan": {"giris": round(plan["giris"], d), "stop": plan["sl"], "hedef": plan["tp"],
+                 "R_R": plan["rr"]},
+        "son_24_mum_UTC [zaman, acilis, yuksek, dusuk, kapanis]": aday["son_mumlar"],
         "yaklasan_ekonomik_olaylar": haber.yakin_olaylar(olaylar, dov),
         "acik_pozisyonlar": pozisyonlar,
     }
     return json.dumps(veri, ensure_ascii=False, default=str)
 
 
+def oy_ayikla(r: dict) -> tuple[str, int, list[str]]:
+    """LLM cevabını doğrular. Geçersizse ValueError (ajan HATA sayılır)."""
+    oy = str(r.get("oy", "")).strip().upper()
+    if oy not in GECERLI_OYLAR:
+        raise ValueError(f"geçersiz oy: {r.get('oy')!r}")
+    try:
+        guven = int(round(float(str(r.get("guven", 0)).strip().rstrip("%"))))
+    except (TypeError, ValueError):
+        raise ValueError(f"geçersiz güven: {r.get('guven')!r}") from None
+    g = r.get("gerekceler", [])
+    if isinstance(g, str):
+        g = [g]
+    elif not isinstance(g, (list, tuple)):
+        g = []
+    return oy, max(0, min(100, guven)), [str(x) for x in g][:4]
+
+
 def _ajan_calistir(llm, ad: str, saglayici: str, baglam: str) -> dict:
     sistem = f"{ORTAK}\n\nROLÜN: {ROLLER[ad]}\n\nÇıktı şeması: {SEMA}"
     try:
-        r = llm.sor_json(saglayici, sistem, baglam)
-        oy = str(r.get("oy", "NOTR")).upper()
-        if oy not in ("DESTEK", "KARSI", "NOTR"):
-            oy = "NOTR"
-        guven = max(0, min(100, int(r.get("guven", 0))))
-        return {"ajan": ad, "model": saglayici, "oy": oy, "guven": guven,
-                "gerekceler": list(r.get("gerekceler", []))[:4]}
+        oy, guven, gerekceler = oy_ayikla(llm.sor_json(saglayici, sistem, baglam, rol="ajan"))
+        return {"ajan": ad, "model": saglayici, "oy": oy, "guven": guven, "gerekceler": gerekceler}
     except Exception as ex:
         log.warning("Ajan %s başarısız: %s", ad, ex)
-        # Hata = güvenli taraf: NOTR (destek sayılmaz)
-        return {"ajan": ad, "model": saglayici, "oy": "NOTR", "guven": 0, "gerekceler": [f"HATA: {ex}"]}
+        return {"ajan": ad, "model": saglayici, "oy": "HATA", "guven": 0,
+                "gerekceler": [f"HATA: {str(ex)[:300]}"]}
 
 
 def ajanlari_calistir(llm, cfg, baglam: str) -> list[dict]:

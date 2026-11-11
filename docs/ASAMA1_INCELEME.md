@@ -135,3 +135,50 @@ Bu oturum bir Linux bulut container'ında çalışıyor. MT5 terminali burada ç
 1. Claude masaüstü uygulamasında Remote Control ile bot klasörünü bu oturuma açmak (Ayarlar → Claude Code → Remote Control). Bu özellik herkese açık olmayabilir.
 2. Bir veri dışa aktarma komutu (`python araclar.py veri_indir`) yazarım. Windows'ta çalıştırırsınız (demo hesapta, sadece okuma), çıkan CSV dosyalarını buraya yüklersiniz, backtest'i burada yaparım. Aşama 5'teki canlı LLM denemesi ise sizin makinenizde çalışır.
 3. Claude Code'u doğrudan Windows'ta çalıştırmak.
+
+---
+
+# Düzeltme durumu (Aşama 1 sonu)
+
+Tüm testler: `python -m pytest` → **180 test geçti** (sahte MT5 + sahte LLM; ağ yok, para harcanmaz).
+
+| # | Durum | Ne yapıldı | Test |
+|---|---|---|---|
+| Y1 | ✔ | Günlük sonuç deal geçmişinden, broker sunucu gününe göre (`risk.gunluk_durum`) | test_filtre |
+| Y2 | ✔ | `baglan()` her zaman demo ister; ana döngüde her tur `demo_kilidi()`; `emir.py` her `order_send`'den önce kontrol eder (config'le kapatılamaz); `sadece_demo` false ise bot/araçlar başlamaz | test_mt5_baglanti, test_emir, test_main |
+| Y3 | ✔ | Plan `analiz_giris`'i taşır; kayma her zaman LLM'lerin gördüğü fiyata göre (`max_kayma_r`) | test_emir, test_main |
+| Y4 | ✔ | Onay 120 sn zaman aşımlı; onaydan sonra plan + kayma + filtre + lot baştan | test_main |
+| Y5 | ✔ | Ajan hatası = `HATA` oyu; Ayı `HATA` ise RED | test_karar_ve_llm, test_main |
+| Y6 | ✔ | Metrikler çıkış zamanına göre sıralanır | test_backtest |
+| Y7 | ✔ | Her eşik ayrı simülasyon | test_backtest |
+| Y8 | ✔ | Takvim bazlı bölümler; kilit sınırı `kayitlar/kilit.json`'da sabit; kilitli dönem bir kez (`--kilidi-ac`), geliştirme işlemleri kilide taşmaz | test_backtest |
+| O1 / S4 | ✔ | İzleme mum kapanışında, backtest ile AYNI `strateji.yeni_stop` | test_izleme, test_tarayici |
+| O2 | ◐ | Komisyon, swap, spread çarpanı eklendi. Mum spread'inin anlamı için `veri_indir --tick-gun` aracı yazıldı; **gerçek veriyle doğrulanmadı** | test_backtest |
+| O3 | ✔ | Portföy simülasyonu: max pozisyon, aynı döviz, tur başına max aday, açık risk dahil günlük limit, min lot, spread/stop. Haber filtresi ve marjin modellenmedi | test_backtest |
+| O4 | ✔ | Kapanmış mum sembolün tick'ine göre; sadece yeni mumda tick'i olan semboller ve az önce kapanan mum; backtest ardışık olmayan mumda girmez | test_mt5_baglanti, test_tarayici, test_backtest |
+| O5 | ✔ | `positions_get` None → işlem yok; bağlantı kopunca bekleyerek yeniden bağlanma; `terminal_info().connected` kontrolü | test_filtre, test_mt5_baglanti, test_main |
+| O6 | ✔ | Takvim alınamaz/bayatsa yeni işlem yok (`haber.takvim_yoksa_islem_yok`) | test_haber, test_filtre |
+| O7 | ✔ | Lot Decimal ile adımın katına aşağı | test_lot_ve_plan |
+| O8 | ✔ | SL/TP/stop tick adımına yuvarlanır | test_lot_ve_plan, test_mt5_baglanti |
+| O9 | ◐ | Sınıf önceliği (kripto→emtia→endeks→forex), hisse/ETF klasörleri hariç, isimden forex için iki geçerli döviz kodu. **Gerçek broker yollarıyla Aşama 3'te kontrol edilecek** | test_mt5_baglanti |
+| O10 | ✔ | Tarama zamanlayıcısı sunucu saatini (UTC farkı) kullanır, ilk 25 sembole bağlı değil | test_mt5_baglanti, test_main |
+| O11 | ✔ | Her kayıtta plan, mum zamanı, UTC zaman, oylar, yargıçlar, token kullanımı ve maliyet | test_main, test_kayit |
+| D1 | ✔ | `tarama_bar: 1000`; canlı tarayıcı ve backtest aynı mumda aynı sinyali veriyor | test_tarayici |
+| D2–D7, D9, D10, D12–D15 | ✔ | (bkz. madde listesi) | çeşitli |
+| D8 | ✔ | Gün sınırı artık broker sunucu günü (belgelendi) | test_filtre |
+| D11 | ◐ | Grok için `max_token_grok: 4000`; kesilme/boş cevap artık açık hata. **Gerçek API ile ölçülmedi (Aşama 5)** | test_karar_ve_llm |
+| S1 | ✔ | Yargıçtan YARIM seçeneği kaldırıldı; LLM lotu etkilemez | test_lot_ve_plan, test_karar_ve_llm |
+| S2 | ✔ | Günlük limit açık stop riskini ve yeni işlemin riskini sayar | test_filtre, test_backtest |
+| S3 | — | Değiştirilmedi (muhafazakâr kural olarak kaldı) | — |
+
+## Düzeltme sırasında bulunan yeni sorunlar
+
+- **YENİ-1 (yüksek):** Claude 5.5 modellerinde düşünme (thinking) varsayılan olarak açık ve düşünme tokenları
+  `max_tokens`'a dahil. Eski `max_token: 900` ile özellikle yargıç (Sonnet 5.5, varsayılan efor high) cevabı
+  yazamadan kesilebilirdi; bot da bu adayı sessizce RED sayardı. Düzeltme: `max_token: 16000`, efor açıkça
+  verilir (`ajan: low`, `yargic: medium`) ve kesilme açık hata olarak loglanır. Gerçek maliyet Aşama 5'te ölçülecek.
+- **YENİ-2 (orta):** Günlük limit sınırında kayan nokta hatası (−200.0000000000001 < −200) izinli işlemi
+  reddediyordu (testler buldu). Göreli 1e-9 tolerans eklendi.
+- **Davranış değişikliği:** `order_calc_margin` None dönerse artık işlem açılmaz (önce açılıyordu).
+- **Yeni ayar:** `llm.claude_yedek_model: true`. Claude yargıcı isteği reddederse (refusal) sunucu tarafında
+  yedek bir Claude modeli cevap verir. İstemezseniz `false` yapın; o zaman ret = RED.
