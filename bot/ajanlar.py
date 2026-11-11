@@ -23,7 +23,9 @@ GECERLI_OYLAR = ("DESTEK", "KARSI", "NOTR")
 ORTAK = (
     "Sen profesyonel bir trading masasında çalışan bir analistsin. Sana bir sembol için "
     "teknik veriler, son mumlar, yaklaşan ekonomik olaylar ve açık pozisyonlar verilecek. "
-    "Mum saatleri UTC'dir. Gelecek fiyatları bilemezsin; uydurma bilgi, uydurma haber kullanma. "
+    "Mum saatleri UTC'dir. İşlemin hangi kuralla önerildiği 'strateji' alanında yazılıdır; "
+    "değerlendirmeni o stratejinin mantığına göre yap. "
+    "Gelecek fiyatları bilemezsin; uydurma bilgi, uydurma haber kullanma. "
     "Sadece verilen veriye dayan. Emin değilsen NOTR de. Türkçe yaz, kısa ve net ol."
 )
 
@@ -57,6 +59,7 @@ def baglam_olustur(aday: dict, plan: dict, olaylar: list, pozisyonlar: list) -> 
     veri = {
         "simdi_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
         "sembol": aday["sembol"], "varlik_sinifi": aday["sinif"],
+        "strateji": aday.get("strateji_aciklama") or aday.get("strateji", "trend_skor"),
         "onerilen_yon": aday["yon"], "tarayici_skoru": aday["skor"],
         "tarayici_nedenleri": aday["nedenler"],
         "ust_zaman_dilimi_trendi": {1: "yukari", -1: "asagi", 0: "yatay"}[aday["ust_trend"]],
@@ -64,8 +67,9 @@ def baglam_olustur(aday: dict, plan: dict, olaylar: list, pozisyonlar: list) -> 
         "RSI": round(aday["rsi"], 1), "ADX": round(aday["adx"], 1),
         "EMA20": round(aday["ema20"], d), "EMA50": round(aday["ema50"], d),
         "EMA200": round(aday["ema200"], d),
-        "plan": {"giris": round(plan["giris"], d), "stop": plan["sl"], "hedef": plan["tp"],
-                 "R_R": plan["rr"]},
+        "plan": {"giris": round(plan["giris"], d), "stop": plan["sl"],
+                 "hedef": plan["tp"] or "yok (zaman stopuyla kapanır)", "R_R": plan["rr"],
+                 "zaman_stopu_mum": plan.get("max_mum") or None},
         "son_24_mum_UTC [zaman, acilis, yuksek, dusuk, kapanis]": aday["son_mumlar"],
         "yaklasan_ekonomik_olaylar": haber.yakin_olaylar(olaylar, dov),
         "acik_pozisyonlar": pozisyonlar,

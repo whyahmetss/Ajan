@@ -1,15 +1,18 @@
-"""5. AŞAMA - İZLEME: açık pozisyonları yönetir (başa baş stop + takip eden stop).
+"""5. AŞAMA - İZLEME: açık pozisyonları yönetir.
 
-Backtest ile BİREBİR aynı kural: her mum KAPANDIĞINDA, kapanan mumun verisiyle bir kez
-değerlendirilir (alış: kapanış; satış: kapanış + mumun spread'i). Mum içi anlık fiyatla
-tetiklenmez; böylece canlı sonuçlar backtest'le karşılaştırılabilir ve broker'a her
-birkaç saniyede bir stop değiştirme isteği gitmez.
-Stop SADECE kâr yönünde hareket eder, asla geri gitmez."""
+Backtest ile BİREBİR aynı kural: her mum KAPANDIĞINDA, kapanan mumun verisiyle bir kez değerlendirilir.
+- Zaman stopu (gunluk_kirilim): giriş mumundan itibaren max_mum mum kapandıysa pozisyon piyasadan
+  kapatılır. Bu stratejide başa baş / takip eden stop YOKTUR.
+- Başa baş + takip eden stop (trend_skor): alış için kapanış, satış için kapanış + mumun spread'i.
+  Stop SADECE kâr yönünde hareket eder, asla geri gitmez.
+Mum içi anlık fiyatla tetiklenmez; böylece canlı sonuçlar backtest'le karşılaştırılabilir ve broker'a
+her birkaç saniyede bir istek gitmez."""
 import logging
+import re
 
 import MetaTrader5 as mt5
 
-from . import emir, indikator, mt5_baglanti as mb, risk
+from . import emir, indikator, mt5_baglanti as mb, risk, strateji
 from .strateji import yeni_stop  # backtest AYNI fonksiyonu kullanır
 
 log = logging.getLogger("izleme")
@@ -30,23 +33,47 @@ def pozisyonlari_yonet(cfg):
             log.exception("Pozisyon yönetilemedi: %s #%s", p.symbol, p.ticket)
 
 
+def zaman_stopu(p, cfg) -> int:
+    """Pozisyonun zaman stopu (mum). Emir yorumundaki 'z<N>' etiketinden okunur; etiket yoksa (broker
+    yorumu değiştirdiyse) aktif strateji gunluk_kirilim ise onun ayarı kullanılır. 0 = zaman stopu yok."""
+    m = re.search(r"\bz(\d+)\b", getattr(p, "comment", "") or "")
+    if m:
+        return int(m.group(1))
+    ad, sp = strateji.aktif(cfg)
+    if ad == "gunluk_kirilim" and "ajanbot s" not in (getattr(p, "comment", "") or ""):
+        return strateji.gunluk_kirilim_cikis(sp)["max_mum"]
+    return 0
+
+
 def _pozisyon_yonet(p, cfg):
     r, zd = cfg["risk"], cfg["zaman_dilimi"]
     periyot = mb.DAKIKA[zd] * 60
     bilgi = mt5.symbol_info(p.symbol)
     tick = mt5.symbol_info_tick(p.symbol)
-    if bilgi is None or tick is None or p.tp == 0:
+    if bilgi is None or tick is None:
         return
     hedef = mb.mum_baslangici(int(tick.time), zd) - periyot     # en son kapanmış mum
     giris_mumu = mb.mum_baslangici(int(p.time), zd)
     if hedef < giris_mumu or _islenen.get(p.ticket, -1) >= hedef:
         return          # giriş mumu henüz kapanmadı ya da bu mum zaten değerlendirildi
-    df = mb.mumlar(p.symbol, zd, 200, int(tick.time))
+    z = zaman_stopu(p, cfg)
+    df = mb.mumlar(p.symbol, zd, max(200, z + 50), int(tick.time))
     if df is None:
         return
-    _islenen[p.ticket] = hedef
     son = df.iloc[-1]
     if int(son.zaman_sn) < giris_mumu:
+        return
+
+    if z:               # zaman stopu olan strateji: başa baş / takip yok
+        gecen = int((df["zaman_sn"] >= giris_mumu).sum())       # giriş mumundan beri kapanan mum sayısı
+        _islenen[p.ticket] = hedef                               # başarısız olursa bir sonraki mumda tekrar denenir
+        if gecen >= z:
+            ok, mesaj = emir.pozisyon_kapat(p, cfg, f"zaman {z}")
+            (log.info if ok else log.warning)("%s zaman stopu (%d mum): %s", p.symbol, gecen, mesaj)
+        return
+
+    _islenen[p.ticket] = hedef
+    if p.tp == 0:
         return
     al = p.type == mt5.POSITION_TYPE_BUY
     # İlk risk mesafesi TP'den geri hesaplanır (TP hiç değiştirilmez): TP = giriş ± tp_r * R

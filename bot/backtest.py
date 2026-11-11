@@ -31,7 +31,8 @@ import numpy as np
 import pandas as pd
 
 from . import haber, indikator
-from .strateji import DAKIKA, UST_TREND_MIN_BAR, adima_yuvarla, skor_dizisi, trend_degeri, yeni_stop
+from .strateji import (DAKIKA, SONSUZ, UST_TREND_MIN_BAR, adima_yuvarla, aktif, gunluk_kirilim_cikis,
+                       gunluk_kirilim_dizisi, skor_dizisi, trend_degeri, yeni_stop)
 from .yollar import yol
 
 log = logging.getLogger("backtest")
@@ -59,16 +60,24 @@ class Prm:
     komisyon_lot: float = 0.0       # hesap para birimi, lot başına gidiş-dönüş
     swap: bool = True
     bakiye: float = 10000.0         # min lot uygunluğu ve % getiri için varsayılan hesap
+    max_mum: int = 0                # zaman stopu (mum); 0 = yok
 
     @classmethod
     def cfgden(cls, cfg, **degisen) -> "Prm":
+        """Aktif stratejinin (config: strateji.ad) çıkış kurallarıyla."""
         r, t, bt = cfg["risk"], cfg["tarayici"], cfg.get("backtest") or {}
-        p = cls(sl_atr_carpan=r["sl_atr_carpan"], tp_r=r["tp_r"], breakeven_r=r["breakeven_r"],
-                trailing_baslangic_r=r["trailing_baslangic_r"], trailing_atr_carpan=r["trailing_atr_carpan"],
-                min_skor=t["min_skor"], max_spread_atr_orani=t["max_spread_atr_orani"],
-                risk_yuzde=r["islem_basi_risk_yuzde"], spread_carpani=bt.get("spread_carpani", 1.0),
-                komisyon_lot=bt.get("komisyon_lot", 0.0), swap=bt.get("swap", True),
-                bakiye=bt.get("bakiye", 10000.0))
+        ortak = dict(max_spread_atr_orani=t["max_spread_atr_orani"], risk_yuzde=r["islem_basi_risk_yuzde"],
+                     spread_carpani=bt.get("spread_carpani", 1.0), komisyon_lot=bt.get("komisyon_lot", 0.0),
+                     swap=bt.get("swap", True), bakiye=bt.get("bakiye", 10000.0))
+        ad, sp = aktif(cfg)
+        if ad == "gunluk_kirilim":
+            c = gunluk_kirilim_cikis(sp)
+            p = cls(sl_atr_carpan=c["sl_atr"], tp_r=c["tp_r"] or SONSUZ, breakeven_r=SONSUZ,
+                    trailing_baslangic_r=SONSUZ, trailing_atr_carpan=0.0, min_skor=0, max_mum=c["max_mum"], **ortak)
+        else:
+            p = cls(sl_atr_carpan=r["sl_atr_carpan"], tp_r=r["tp_r"], breakeven_r=r["breakeven_r"],
+                    trailing_baslangic_r=r["trailing_baslangic_r"], trailing_atr_carpan=r["trailing_atr_carpan"],
+                    min_skor=t["min_skor"], **ortak)
         return replace(p, **degisen)
 
     def stop_kurallari(self) -> dict:
@@ -94,6 +103,11 @@ class SembolVerisi:
     hafta_sonu: bool        # Cumartesi mumu var mı (7/24 piyasa)
     periyot: int
     isinma: int
+    atr_stop: np.ndarray | None = None     # stop mesafesini ölçen ATR (trend_skor: H1 ATR; gunluk_kirilim: günlük ATR)
+
+    def __post_init__(self):
+        if self.atr_stop is None:
+            self.atr_stop = self.atr
 
 
 @dataclass(frozen=True)
@@ -146,15 +160,23 @@ def veri_hazirla(ad: str, sinif: str, bilgi: dict, alt: pd.DataFrame, ust: pd.Da
         return None
     d = indikator.ekle(alt)
     t = alt["time"].to_numpy(np.int64)
-    ut = _ust_trend_dizisi(t, ust, p, pu)
-    yon, skor = sinyaller(d, ut, isinma)
+    strateji_ad, sp = aktif(cfg)
+    if strateji_ad == "gunluk_kirilim":
+        yon, skor, atr_stop = gunluk_kirilim_dizisi(t, d["open"].to_numpy(float), d["high"].to_numpy(float),
+                                                    d["low"].to_numpy(float), d["close"].to_numpy(float), sp)
+        yon, skor = yon.copy(), skor.copy()
+        yon[:isinma], skor[:isinma] = 0, 0
+    else:
+        yon, skor = sinyaller(d, _ust_trend_dizisi(t, ust, p, pu), isinma)
+        atr_stop = None
     ardisik = np.zeros(len(t), bool)
     ardisik[:-1] = (t[1:] - t[:-1]) == p
     cumartesi = (((t // 86400) + 3) % 7) == 5                    # 1970-01-01 Perşembe; Pzt=0
     return SembolVerisi(ad=ad, sinif=sinif, bilgi=bilgi, t=t, o=d["open"].to_numpy(float),
                         h=d["high"].to_numpy(float), l=d["low"].to_numpy(float), c=d["close"].to_numpy(float),
                         sp_pt=d["spread"].to_numpy(float), atr=d["atr"].to_numpy(float), yon=yon, skor=skor,
-                        ardisik=ardisik, hafta_sonu=bool(cumartesi.mean() > 0.01), periyot=p, isinma=isinma)
+                        ardisik=ardisik, hafta_sonu=bool(cumartesi.mean() > 0.01), periyot=p, isinma=isinma,
+                        atr_stop=atr_stop)
 
 
 # ------------------------------------------------------------------ maliyetler
@@ -203,7 +225,7 @@ def islem_simule(v: SembolVerisi, i: int, prm: Prm, son: int | None = None) -> d
         return None
     b, mult = v.bilgi, prm.spread_carpani
     point = b["point"]
-    o, h, l, c, atr, sp_pt = v.o, v.h, v.l, v.c, v.atr, v.sp_pt
+    o, h, l, c, atr, sp_pt = v.o, v.h, v.l, v.c, v.atr_stop, v.sp_pt
     al = bool(v.yon[i] > 0)
     spj = sp_pt[j] * point * mult
     m = max(prm.sl_atr_carpan * atr[i], ((b.get("trade_stops_level") or 0) + 5) * point + spj)
@@ -242,6 +264,8 @@ def islem_simule(v: SembolVerisi, i: int, prm: Prm, son: int | None = None) -> d
                 cikis, kc, durum = ao, k, "TP"; break
             if al_ <= tp:
                 cikis, kc, durum = tp, k, "TP"; break
+        if prm.max_mum and k - j + 1 >= prm.max_mum:       # zaman stopu: mum kapanışında piyasadan çık
+            cikis, kc, durum = (c[k] if al else c[k] + spk), k, "ZAMAN"; break
         yeni = yeni_stop(al, giris, m, c[k], spk, atr[k], point, kur)
         if yeni is not None and ((al and yeni > sl) or (not al and yeni < sl)):
             sl = yeni
@@ -256,7 +280,7 @@ def islem_simule(v: SembolVerisi, i: int, prm: Prm, son: int | None = None) -> d
     # komisyon: lot başına sabit (config) + sembole özgü, pozisyon değerinin yüzdesi (veri dosyasında varsa)
     kom = prm.komisyon_lot / kayip_lot + (b.get("komisyon_yuzde") or 0.0) / 100 * giris / m
     swp = _swap_R(v, prm, al, int(v.t[j]), int(v.t[kc]), m, giris)
-    return {"sembol": v.ad, "sinif": v.sinif, "yon": "AL" if al else "SAT", "skor": int(v.skor[i]),
+    return {"sembol": v.ad, "sinif": v.sinif, "yon": "AL" if al else "SAT", "skor": round(float(v.skor[i]), 1),
             "i": int(i), "k": int(kc), "giris_t": int(v.t[j]), "cikis_t": int(v.t[kc]), "cikis": durum,
             "R_brut": float(R_brut), "R": float(R_brut - kom + swp), "maliyet_R": float(kom - swp),
             "risk_yuzde": float(lot * kayip_lot / prm.bakiye * 100), "be_k": be_k}
@@ -267,7 +291,7 @@ def _adaylar(v: SembolVerisi, prm: Prm, kesim: Kesim) -> dict:
     yer kaplar ama filtre/lot aşamasında reddedilirdi."""
     out, son = {}, kesim.son_index(v)
     point, mult = v.bilgi["point"], prm.spread_carpani
-    for i in np.flatnonzero((v.skor >= prm.min_skor) & v.ardisik):
+    for i in np.flatnonzero((v.yon != 0) & (v.skor >= prm.min_skor) & v.ardisik):
         i = int(i)
         if i < v.isinma or i + 1 > son or not (kesim.bas <= v.t[i + 1] < kesim.bit):
             continue
@@ -298,7 +322,7 @@ def portfoy_simule(veriler: list[SembolVerisi], prm: Prm, kesim: Kesim, cfg) -> 
     tarama: dict = {}
     for sira, v in enumerate(veriler):
         for i, tr in _adaylar(v, prm, kesim).items():
-            tarama.setdefault(int(v.t[i]) + v.periyot, []).append((int(v.skor[i]), sira, v, tr))
+            tarama.setdefault(int(v.t[i]) + v.periyot, []).append((float(v.skor[i]), sira, v, tr))
     acik, alinan, gunluk = [], [], {}
     for T in sorted(tarama):
         kalan = []
@@ -412,9 +436,13 @@ def calistir(cfg, veriler: list[SembolVerisi], skorlar: list[int], portfoy: bool
         return None
     prm0 = prm or Prm.cfgden(cfg)
     dn = donemler(veriler, cfg)
+    strateji_ad = aktif(cfg)[0]
+    if strateji_ad != "trend_skor":
+        skorlar = [prm0.min_skor]               # skor eşiği sadece trend_skor stratejisinde anlamlı
     mod = "PORTFÖY (canlı kuralları)" if portfoy else "SEMBOL BAŞINA (portföy kuralları yok)"
     print("\n" + "=" * 92)
-    print(f" BACKTEST {cfg['zaman_dilimi']} | {len(veriler)} sembol | {mod} | işlem başı risk %{prm0.risk_yuzde}")
+    print(f" BACKTEST {cfg['zaman_dilimi']} | strateji: {strateji_ad} | {len(veriler)} sembol | {mod} | "
+          f"işlem başı risk %{prm0.risk_yuzde}")
     print(f" eğitim {_tarih(dn['egitim'].bas)} → {_tarih(dn['egitim'].bit)} | "
           f"TEST {_tarih(dn['TEST'].bas)} → {_tarih(dn['TEST'].bit)} | "
           f"KİLİTLİ {_tarih(dn['KILITLI'].bas)} → {_tarih(dn['KILITLI'].bit)}  (tarihler sunucu saati)")
@@ -481,9 +509,16 @@ def mt5ten_cek(ad: str, cfg, yil: float):
     return out[0], out[1], {a: getattr(si, a, None) for a in BILGI_ALANLARI}
 
 
+def izinli_siniflar(cfg) -> set:
+    """Aktif stratejinin işlem yaptığı varlık sınıfları (boş küme = hepsi)."""
+    return set(aktif(cfg)[1].get("siniflar") or [])
+
+
 def mt5ten_yukle(cfg, liste: list[dict], yil: float, onbellek: Path | None = None) -> list[SembolVerisi]:
-    veriler = []
+    veriler, izinli = [], izinli_siniflar(cfg)
     for s in liste:
+        if izinli and s["sinif"] not in izinli:
+            continue
         try:
             r = mt5ten_cek(s["ad"], cfg, yil)
             v = veri_hazirla(s["ad"], s["sinif"], r[2], r[0], r[1], cfg, onbellek) if r else None
@@ -501,9 +536,9 @@ def dosyadan_yukle(klasor, cfg, sadece: list[str] | None = None, onbellek: Path 
     with open(klasor / "semboller.json", encoding="utf-8") as f:
         meta = json.load(f)
     zd, ust_zd = cfg["zaman_dilimi"], cfg["ust_zaman_dilimi"]
-    veriler = []
+    veriler, izinli = [], izinli_siniflar(cfg)
     for s in meta["semboller"]:
-        if sadece and s["ad"] not in sadece:
+        if (sadece and s["ad"] not in sadece) or (izinli and s["sinif"] not in izinli):
             continue
         if zd not in s["dosyalar"] or ust_zd not in s["dosyalar"]:
             raise SystemExit(f"{s['ad']}: {zd}/{ust_zd} verisi yok (indirilen: {list(s['dosyalar'])})")

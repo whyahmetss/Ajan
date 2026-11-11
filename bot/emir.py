@@ -55,7 +55,7 @@ def piyasa_emri(plan: dict, lot: float, cfg, yorum: str = "ajanbot") -> tuple[bo
     # SL/TP'yi yeni fiyata göre kaydır ki risk mesafesi (ve lot hesabı) aynı kalsın
     fark = fiyat - plan["giris"]
     sl = mb.fiyat_normalize(plan["sl"] + fark, bilgi)
-    tp = mb.fiyat_normalize(plan["tp"] + fark, bilgi)
+    tp = mb.fiyat_normalize(plan["tp"] + fark, bilgi) if plan["tp"] else 0.0      # 0 = hedefsiz pozisyon
 
     istek = {
         "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": float(lot),
@@ -82,6 +82,31 @@ def piyasa_emri(plan: dict, lot: float, cfg, yorum: str = "ajanbot") -> tuple[bo
         return True, (f"KISMİ DOLUM #{sonuc.order} {plan['yon']} {sonuc.volume}/{lot} {sym} "
                       f"@ {sonuc.price} SL {sl} TP {tp}")
     return False, f"Emir reddedildi: {sonuc.retcode} {sonuc.comment}"
+
+
+def pozisyon_kapat(pozisyon, cfg, neden: str = "") -> tuple[bool, str]:
+    """Pozisyonu piyasa fiyatından kapatır (zaman stopu). Demo kilidi burada da geçerlidir."""
+    bilgi = mt5.symbol_info(pozisyon.symbol)
+    tick = mt5.symbol_info_tick(pozisyon.symbol)
+    if bilgi is None or tick is None:
+        return False, "Sembol bilgisi yok"
+    al = pozisyon.type == mt5.POSITION_TYPE_BUY
+    istek = {
+        "action": mt5.TRADE_ACTION_DEAL, "symbol": pozisyon.symbol, "volume": float(pozisyon.volume),
+        "type": mt5.ORDER_TYPE_SELL if al else mt5.ORDER_TYPE_BUY, "position": pozisyon.ticket,
+        "price": tick.bid if al else tick.ask, "deviation": int(cfg["risk"]["max_sapma_puan"]) * 5,
+        "magic": pozisyon.magic, "comment": f"ajanbot {neden}"[:31], "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": _doldurma_modu(bilgi),
+    }
+    red = _demo_degilse_reddet()
+    if red:
+        return False, red
+    s = mt5.order_send(istek)
+    if s is None:
+        return False, f"Kapatma emri gönderilemedi: {mt5.last_error()}"
+    if s.retcode in (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_DONE_PARTIAL):
+        return True, f"#{pozisyon.ticket} {pozisyon.symbol} kapatıldı @ {s.price} ({neden})"
+    return False, f"Kapatma reddedildi: {s.retcode} {s.comment}"
 
 
 def stop_guncelle(pozisyon, yeni_sl: float) -> bool:

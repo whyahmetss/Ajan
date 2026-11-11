@@ -132,3 +132,30 @@ def test_portfoy_kurallari_bot_motoruyla_ayni(cfg):
     assert motor.ozet(df)["toplam_R"] == backtest.metrikler(beklenen)["toplam_R"]
     tek = pd.concat([deney.islemler([s], deney.s_mevcut, cikis, motor.Maliyet(), kesim, cfg)[0] for s in semler])
     assert len(df) < len(tek)                                        # portföy kuralları gerçekten işlem eliyor
+
+
+def test_gunluk_kirilim_arastirma_ve_bot_motoru_ayni(cfg_gk):
+    """Araştırmada doğrulanan strateji (K2) ile bota konan strateji AYNI işlemleri ve AYNI sonuçları üretir."""
+    from arastirma import deney
+    from tests.sahte_mt5 import MUM_DTYPE
+    from tests.yardimci import PAZARTESI
+    n = 12000
+    rng = np.random.default_rng(11)
+    c = 100.0 * np.exp(np.cumsum(rng.normal(0.00015, 0.004, n)))
+    o = np.r_[100.0, c[:-1]]
+    h1 = np.zeros(n, MUM_DTYPE)
+    h1["time"] = PAZARTESI + np.arange(n) * 3600
+    h1["open"], h1["close"] = o, c
+    h1["high"] = np.maximum(o, c) * (1 + np.abs(rng.normal(0, 0.002, n)))
+    h1["low"] = np.minimum(o, c) * (1 - np.abs(rng.normal(0, 0.002, n)))
+    h1["tick_volume"], h1["spread"] = 100, 3
+    bilgi = {**BILGI, "point": 0.01, "trade_tick_size": 0.01, "trade_tick_value": 0.01, "swap_long": -20.0}
+    sem = motor.sembol_kur("BTCUSD", "kripto", bilgi, pd.DataFrame(h1), pd.DataFrame(ust_mumlar(h1)), 1000)
+    v = backtest.veri_hazirla("BTCUSD", "kripto", bilgi, pd.DataFrame(h1), pd.DataFrame(ust_mumlar(h1)), cfg_gk)
+    kesim = backtest.Kesim("x", int(sem.t[1000]), int(sem.t[11500]), int(sem.t[11800]))
+    bot = backtest.tek_simule(v, backtest.Prm.cfgden(cfg_gk, bakiye=1e9), kesim)
+    ar, _ = deney.islemler([sem], deney.s_gunluk_kirilim, deney.TUTMA, motor.Maliyet(), kesim, cfg_gk)
+    assert len(bot) == len(ar) > 15
+    assert [x["i"] for x in bot] == list(ar["i"]) and [x["k"] for x in bot] == list(ar["k"])
+    assert ar["R"].to_numpy() == pytest.approx([x["R"] for x in bot], abs=1e-9)
+    assert {x["cikis"] for x in bot} <= {"SL", "ZAMAN", "SON"}                  # hedef, başa baş, takip yok

@@ -34,13 +34,27 @@ def temiz_durum(tmp_path, monkeypatch):
     yield
 
 
-@pytest.fixture
-def cfg(tmp_path):
+def _temel(tmp_path):
     c = copy.deepcopy(_CFG)
     c["log_klasoru"] = str(tmp_path / "kayitlar")
     c["mod"] = "sinyal"
     c["haber"]["aktif"] = False
     return c
+
+
+@pytest.fixture
+def cfg(tmp_path):
+    """ESKİ strateji (trend_skor) + LLM veto modu: ilk kod tabanının davranışını test eden testler için."""
+    c = _temel(tmp_path)
+    c["strateji"]["ad"] = "trend_skor"
+    c["llm"]["mod"] = "veto"
+    return c
+
+
+@pytest.fixture
+def cfg_gk(tmp_path):
+    """Varsayılan config: gunluk_kirilim stratejisi, LLM gözlem modu."""
+    return _temel(tmp_path)
 
 
 @pytest.fixture

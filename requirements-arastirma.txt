@@ -1,0 +1,3 @@
+# Araştırma kodu (arastirma/) için. Bot bunlara ihtiyaç duymaz.
+-r requirements-dev.txt
+numba>=0.60

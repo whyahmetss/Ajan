@@ -21,7 +21,9 @@ DIS_HAREKET = {mt5.DEAL_TYPE_BALANCE, mt5.DEAL_TYPE_CREDIT, mt5.DEAL_TYPE_BONUS}
 
 def plan_olustur(aday: dict, cfg, referans: dict | None = None) -> dict | None:
     """Giriş / stop / hedef. referans = LLM'lere gösterilen plan: kayma kontrolü (emir.py)
-    her zaman o fiyata göre yapılır, plan sonradan tazelense bile."""
+    her zaman o fiyata göre yapılır, plan sonradan tazelense bile.
+    Stratejinin kendi çıkışı varsa (aday["cikis"]: stop mesafesi, hedef oranı, zaman stopu) o kullanılır;
+    hedef oranı yoksa pozisyon HEDEFSİZ açılır (tp = 0) ve zaman stopuyla kapanır."""
     r = cfg["risk"]
     bilgi = mt5.symbol_info(aday["sembol"])
     tick = mt5.symbol_info_tick(aday["sembol"])
@@ -30,13 +32,17 @@ def plan_olustur(aday: dict, cfg, referans: dict | None = None) -> dict | None:
     al = aday["yon"] == "AL"
     giris = tick.ask if al else tick.bid
     spread = tick.ask - tick.bid
-    mesafe = r["sl_atr_carpan"] * aday["atr"]
+    cikis = aday.get("cikis")
+    if cikis:
+        mesafe, tp_r, max_mum = cikis["sl_mesafe"], cikis.get("tp_r"), int(cikis.get("max_mum") or 0)
+    else:
+        mesafe, tp_r, max_mum = r["sl_atr_carpan"] * aday["atr"], r["tp_r"], 0
     # Broker'ın izin verdiği minimum stop mesafesi + spread
     mesafe = max(mesafe, (bilgi.trade_stops_level + 5) * bilgi.point + spread)
     sl = mb.fiyat_normalize(giris - mesafe if al else giris + mesafe, bilgi)
-    tp = mb.fiyat_normalize(giris + r["tp_r"] * mesafe if al else giris - r["tp_r"] * mesafe, bilgi)
+    tp = mb.fiyat_normalize(giris + tp_r * mesafe if al else giris - tp_r * mesafe, bilgi) if tp_r else 0.0
     plan = {"sembol": aday["sembol"], "yon": aday["yon"], "giris": giris, "sl": sl, "tp": tp,
-            "mesafe": abs(giris - sl), "rr": r["tp_r"], "spread": spread, "atr": aday["atr"]}
+            "mesafe": abs(giris - sl), "rr": tp_r, "max_mum": max_mum, "spread": spread, "atr": aday["atr"]}
     ref = referans or plan
     plan["analiz_giris"] = ref.get("analiz_giris", ref["giris"])
     plan["analiz_mesafe"] = ref.get("analiz_mesafe", ref["mesafe"])

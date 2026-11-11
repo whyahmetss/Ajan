@@ -187,11 +187,24 @@ def order_send(istek):
     D.gonderilen.append(istek)
     if D.order_send_sonuc is not None:
         return D.order_send_sonuc
+    if istek["action"] == TRADE_ACTION_DEAL and istek.get("position"):        # pozisyon kapatma
+        for p in list(D.pozisyonlar):
+            if p.ticket == istek["position"]:
+                D.pozisyonlar.remove(p)
+                kar = (istek["price"] - p.price_open) * (1 if p.type == POSITION_TYPE_BUY else -1)
+                b = D.semboller.get(p.symbol)
+                para = kar / b.trade_tick_size * b.trade_tick_value * p.volume if b else 0.0
+                tick = D.tickler.get(p.symbol)
+                deal_ekle(time=tick.time if tick else 0, profit=para, symbol=p.symbol, magic=p.magic)
+                return NS(retcode=TRADE_RETCODE_DONE, order=p.ticket, price=istek["price"],
+                          volume=istek["volume"], comment="Request executed")
+        return NS(retcode=10013, order=0, price=0.0, volume=0.0, comment="Position not found")
     if istek["action"] == TRADE_ACTION_DEAL:
         tick = D.tickler.get(istek["symbol"])
         p = pozisyon_ekle(time=tick.time if tick else 0, symbol=istek["symbol"], volume=istek["volume"],
                           type=POSITION_TYPE_BUY if istek["type"] == ORDER_TYPE_BUY else POSITION_TYPE_SELL,
-                          price_open=istek["price"], sl=istek["sl"], tp=istek["tp"], magic=istek["magic"])
+                          price_open=istek["price"], sl=istek["sl"], tp=istek["tp"], magic=istek["magic"],
+                          comment=istek.get("comment", ""))
         return NS(retcode=TRADE_RETCODE_DONE, order=p.ticket, price=istek["price"],
                   volume=istek["volume"], comment="Request executed")
     if istek["action"] == TRADE_ACTION_SLTP:

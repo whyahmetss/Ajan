@@ -1,32 +1,71 @@
 # AJAN BOT — MT5 için Çok Ajanlı Trading Botu
 
+> **Önce bunu oku.** Bu bot bir "para basma makinesi" değildir ve öyle bir şey yoktur.
+> 2015-2026 gerçek piyasa verisiyle 11 strateji fikri test edildi (`docs/ARASTIRMA_GUNLUGU.md`):
+> - Bu projenin ilk stratejisi (`trend_skor`) **her yıl zarar etti**.
+> - Kazanma oranı %60+ olan 7 fikrin **hepsi zarar etti** (o kazanma oranı rastgele girişte de çıkıyor).
+> - Sadece biri, **kripto günlük kırılım momentumu**, hiç görülmemiş son dönemde de kâr etti.
+>   Varsayılan strateji budur. Kazanma oranı **~%45-50**, getirisi **küçük** (aşağıda).
+>
+> Bot sadece DEMO hesapta çalışır. Aşağıdaki sonuçlar geçmişe aittir, geleceği garanti etmez.
+
+## Strateji: `gunluk_kirilim` (kripto günlük kırılım momentumu)
+
+- **Sinyal:** broker sunucu gününün ilk H1 mumu kapandığında, dünkü günlük kapanış hem 200 günlük
+  ortalamanın üstünde hem de son 20 günün en yüksek kapanışı ise **alış**. Sadece kripto, sadece alış.
+- **Çıkış:** stop = giriş − 2 × günlük ATR. Hedef **yok**. 240 H1 mumu (10 gün) sonra pozisyon piyasadan
+  kapatılır. Başa baş / takip eden stop yok.
+- **Risk:** işlem başı bakiyenin %0.5'i; aynı anda en fazla 2 kripto pozisyonu; günlük en fazla %2 zarar.
+
+### Geçmiş sonuçlar (gerçek fiyatlar, modellenmiş CFD maliyeti, işlem başı %0.5 risk)
+
+| Dönem | İşlem | Kazanma | Ort. R | Kâr faktörü | Yıllık getiri | En büyük düşüş |
+|---|---|---|---|---|---|---|
+| Eğitim (2018-03 → 2021-09, iki büyük boğa dönemi içerir) | 114 | %50.9 | +0.59 | 2.62 | ~%9.5 | %3.5 |
+| TEST (2021-09 → 2024-07) | 85 | %45.9 | +0.24 | 1.61 | ~%3.6 | %4.2 |
+| **KİLİTLİ (2024-07 → 2026-11), bir kez bakıldı** | 55 | %47.3 | +0.21 | 1.50 | **~%2.5** | %4.0 |
+
+Canlı portföy kurallarıyla, büyük hesap varsayımıyla. Rastgele girişe karşı kilitli dönemde p = 0.019.
+
+**Bilmen gerekenler:**
+1. Kazanma oranı %50'nin altında. İşlemlerin yarısından fazlası stop olur; kâr az sayıda büyük hareketten gelir.
+2. Kilitli dönemdeki kârın tamamı 2024 sonundaki ralliden. 2025 ve 2026'da hafif zararda. Strateji güçlü
+   boğa dönemlerinde kazanır, diğer zamanlarda az az kaybeder. Aylarca kâr etmeyebilir.
+3. Getiri küçük: bu risk ayarlarıyla yılda ~%2.5-5. Riski artırmak getiriyi de düşüşü de aynı oranda büyütür.
+4. Küçük hesapta bazı işlemler açılamaz: 10.000 USD hesapta BTC'nin 0.01 lotu bile %0.5 riskten büyük
+   olabilir (bot bunu "Min lot bile riskten fazla" diye reddeder). ~25.000 USD ve üstü demo hesap önerilir.
+5. Sinyal günde bir kez, sunucu saatiyle gece 01:00 civarında değerlendirilir. **Bot o saatte çalışmıyorsa
+   o günün işlemi kaçar.** Bot 7/24 açık bir bilgisayarda çalışmalıdır.
+6. Araştırma verisi senin broker'ının verisi değil (Binance fiyatları + varsayılan CFD spread/finansman).
+   Broker'ının kripto spread'i ve gecelik finansmanı yüksekse kenar küçülür.
+
+## Akış
+
 ```
-Tarayıcı (kod, ücretsiz)  →  tüm forex / endeks / kripto / emtia sembolleri, az önce kapanan mum, en iyi 3 aday
+Tarayıcı (kod, ücretsiz)  →  aktif stratejinin sinyali; az önce kapanan mum; açık piyasalar
         ↓
 Filtre ajanı (kod)        →  spread, haber, günlük zarar (açık stoplar dahil), pozisyon/döviz limitleri, DURDUR
         ↓
-4 LLM ajanı (paralel)     →  Boğa (Claude) · Ayı (Grok, veto hakkı) · Makro (Grok) · Risk (Claude)
+4 LLM ajanı + yargıç      →  mod: gozlem (kaydeder, ENGELLEMEZ) | veto (reddederse işlem yok) | kapali
         ↓
-Oy sayımı (kod)           →  en az 2 destek, Ayı vetosu yok (Ayı cevap veremezse de RED)
-        ↓
-Yargıç                    →  Claude VE Grok ayrı ayrı; ikisi de ONAY derse geçer
-        ↓  (isteğe bağlı) TradingAgents derin analiz
 Son kontrol (kod)         →  fiyat analizden 0.3R'den fazla kaçtıysa iptal; filtre ve lot baştan
         ↓
-Risk / lot (kod)          →  bakiyenin %0.5'i risk, SL = 1.5 ATR, TP = 2R
+Risk / lot (kod)          →  bakiyenin %0.5'i risk; lot aşağı yuvarlanır; LLM lotu değiştiremez
         ↓
 Emir (mod: sinyal / onay / otomatik)   — her emirden önce hesabın DEMO olduğu kontrol edilir
         ↓
-İzleme (her mum kapanışında) →  1R'de stop girişe, 1.5R'den sonra ATR ile takip eden stop
+İzleme (her mum kapanışında) →  zaman stopu (gunluk_kirilim) ya da başa baş + takip eden stop (trend_skor)
 ```
 
-**Altın kural:** LLM'ler sadece "evet / hayır" der. Lot, stop ve risk limitleri koddadır; hiçbir yapay zekâ
-bunları değiştiremez (yargıç lotu ne artırabilir ne azaltabilir).
+**LLM katmanı neden "gözlem" modunda?** Doğrulanan şey kural tabanlı stratejidir; LLM'lerin katkısı
+ölçülmedi. Ayrıca bu stratejinin kazancı büyük hareketlerden gelir ve "aşırı uzamış hareket" diyen bir
+veto tam da bunları silebilir. Gözlem modunda ajanlar ve yargıçlar oy verir, hepsi kaydedilir, ama işlemi
+engellemez. Yeterli kayıt birikince `python araclar.py rapor` ile katkıları ölçülür; değer katıyorlarsa
+`llm.mod: veto` yapılır. API anahtarı kullanmak istemiyorsan `llm.mod: kapali`.
 
 **Gerçek hesap kilidi:** Bot sadece DEMO hesapta çalışır. `sadece_demo: true` olmak zorundadır; ayrıca kodda
-her emirden ve stop değişikliğinden hemen önce hesap türü kontrol edilir ve bu kontrol config ile kapatılamaz.
-Bot çalışırken MT5'te gerçek hesaba geçilirse bot kendini durdurur. `araclar.py` komutları da gerçek hesapta
-çalışmaz.
+her emirden, stop değişikliğinden ve pozisyon kapatmadan hemen önce hesap türü kontrol edilir ve bu kontrol
+config ile kapatılamaz. Bot çalışırken MT5'te gerçek hesaba geçilirse bot kendini durdurur.
 
 ---
 
@@ -36,20 +75,39 @@ Bot çalışırken MT5'te gerçek hesaba geçilirse bot kendini durdurur. `aracl
 2. **MT5'i** aç, demo hesabınla giriş yap.
    `Araçlar → Seçenekler → Uzman Danışmanlar → "Algoritmik işlemlere izin ver"` işaretle.
    Üstteki **Algo Trading** butonu yeşil olmalı.
-   Backtest için: `Araçlar → Seçenekler → Grafikler → Grafikteki maks. çubuk` değerini yükselt (ör. 500000).
+   `Araçlar → Seçenekler → Grafikler → Grafikteki maks. çubuk` değerini yükselt (ör. 500000).
 3. Bu klasörde komut satırını aç (klasörün adres çubuğuna `cmd` yazıp Enter) ve:
    ```
    pip install -r requirements.txt
    ```
-4. `.env.example` dosyasını kopyala, adını `.env` yap, API anahtarlarını yaz:
-   - Claude: https://console.anthropic.com
-   - Grok: https://console.x.ai
+4. (LLM kullanacaksan) `.env.example` dosyasını kopyala, adını `.env` yap, API anahtarlarını yaz.
    Anahtarlar sadece `.env`'de durur; loglara ve kayıt dosyalarına yazılmadan önce maskelenir.
-5. Kontroller:
+5. Kontrol:
    ```
-   python araclar.py semboller     (broker sembolleri doğru sınıflanıyor mu?)
-   python araclar.py modeller      (model isimleri doğru mu? config.yaml > llm kısmına yaz)
+   python araclar.py semboller     (kripto sembolleri "kripto" olarak sınıflanıyor mu?)
+   python araclar.py modeller      (LLM kullanacaksan: model isimleri doğru mu?)
    ```
+
+## Sırayla yapılacaklar
+
+| Adım | Komut | Ne için |
+|---|---|---|
+| 1. Tek tarama | `python main.py --bir-kez --mod sinyal` | Bot bağlanıyor, sembolleri görüyor mu? (emir atmaz) |
+| 2. Sinyal modu, 4+ hafta | `python main.py --mod sinyal` | Sinyaller kaydedilir, emir atılmaz |
+| 3. Rapor | `python araclar.py rapor` | Sinyallerin sanal sonucu; ajanların isabeti; LLM değer katıyor mu? |
+| 4. Otomatik, demo, 6+ ay | config: `mod: otomatik` | Demo sonuçları geçmiş sonuçlara benziyor mu? |
+
+Strateji yılda ~30-40 işlem açar; bir-iki haftada sonuç görmeyi bekleme. Gerçek hesap bu kurulumda kilitlidir.
+
+### İsteğe bağlı: kendi broker verinle backtest
+
+```
+python araclar.py veri_indir --yil 4 --tick-gun 5    (veri/ klasörüne CSV; içinde hesap bilgisi yok)
+python araclar.py backtest --veri veri               (canlı portföy kuralları)
+python araclar.py backtest --veri veri --tek         (sembol başına)
+```
+Bu, broker'ının spread ve verisiyle bir **maliyet kontrolüdür**; yeni bir "görülmemiş dönem" kanıtı değildir
+(aynı dönem araştırmada zaten kullanıldı). `config.yaml > backtest.komisyon_lot` değerini broker'ına göre doldur.
 
 ## Testler (MT5 ve API anahtarı gerekmez, para harcamaz)
 
@@ -57,79 +115,60 @@ Bot çalışırken MT5'te gerçek hesaba geçilirse bot kendini durdurur. `aracl
 pip install -r requirements-dev.txt
 python -m pytest
 ```
-Testler sahte bir MetaTrader5 modülü ve sahte LLM cevaplarıyla çalışır (Linux'ta da).
+Sahte bir MetaTrader5 modülü ve sahte LLM cevaplarıyla çalışır (Linux'ta da). Canlı tarayıcı ile backtest'in
+aynı sinyali ve aynı stopu ürettiği, zaman stopunun aynı mumda çalıştığı testlerle doğrulanır.
 
-## Sırayla yapılacaklar (atlama!)
+## Araştırmayı yeniden üretmek
 
-| Adım | Komut | Geçme şartı |
-|---|---|---|
-| 1. Backtest | `python araclar.py backtest` | **TEST** satırında kar_faktoru ≥ 1.2 ve ort_R ≥ 0.05 |
-| 2. Kilitli dönem | strateji ayarları BİTİNCE, bir kez: `python araclar.py backtest --kilidi-ac` | TEST'e yakın sonuç |
-| 3. Sinyal modu, 1-2 hafta | `python main.py --mod sinyal` | Kararlar mantıklı mı? `kayitlar/kararlar.csv` |
-| 4. Onay modu, demo, 1 ay | `mod: onay` | Demo sonuçları backtest'e yakın mı? |
-| 5. Otomatik, demo, 2-3 ay | `mod: otomatik` | Tutarlı kâr, max düşüş kabul edilebilir |
-
-Bu kurulum gerçek hesapta çalışmaz (yukarıdaki kilit).
-
-Tek tarama ile hızlı deneme (emir atmaz): `python main.py --bir-kez --mod sinyal`
-
-### Backtest hakkında
-
-- Veri bir kez indirilip dosyadan test edilebilir (MT5 açık olmadan, başka bilgisayarda):
-  ```
-  python araclar.py veri_indir --yil 4                 (veri/ klasörüne CSV; içinde hesap bilgisi yok)
-  python araclar.py veri_indir --yil 4 --tick-gun 5    (+ mum spread'ini gerçek tick spread'iyle karşılaştır)
-  python araclar.py backtest --veri veri
-  ```
-- Bölümler takvime göredir: son %20 **KİLİTLİ** (sınırı ilk çalıştırmada `kayitlar/kilit.json`'a yazılır),
-  kalan dönemin ilk %70'i eğitim, son %30'u test. Ayarları eğitimde seç, TEST'e bak, kilitli döneme en sonda
-  bir kez bak (ikinci kez bakmak için `--zorla` gerekir ve kayda geçer).
-- Varsayılan mod canlı portföy kurallarını uygular (max pozisyon, aynı döviz, tur başına 3 aday, günlük limit,
-  min lot). `--tek` ile sembol başına bağımsız test.
-- Maliyetler: spread, `backtest.komisyon_lot`, swap (sembolün bugünkü oranlarıyla). Stres testi için
-  `backtest.spread_carpani: 1.5 / 2.0`.
-- Dahil olmayanlar: LLM katmanı, haber filtresi (geçmiş takvim yok), marjin kontrolü.
+```
+pip install -r requirements-arastirma.txt
+python -m arastirma.veri_topla            (halka açık kaynaklardan gerçek veri: FXCM, HistData, Binance)
+python -m arastirma.deney H0              (ilk strateji: gerçek veride sonuç)
+python -m arastirma.deney K2              (seçilen strateji: geliştirme dönemi raporu)
+python -m arastirma.olay                  (olay incelemesi)
+```
+Kilitli dönem bir kez açıldı; kaydı `docs/kilit_kaydi.json`, çıktısı `docs/kilitli_donem_ciktisi.txt`.
 
 ## Acil durum
 
 - **Yeni işlem açmayı durdur:** proje klasörüne `DURDUR` adında boş bir dosya koy. Silince devam eder.
-- **Botu kapat:** Ctrl+C. Açık pozisyonların SL/TP'si broker'da kalır, korumasız kalmazlar.
+- **Botu kapat:** Ctrl+C. Açık pozisyonların stopu broker'da kalır. **Dikkat:** `gunluk_kirilim` pozisyonlarının
+  hedefi yoktur ve 10 günlük zaman stopunu bot uygular; bot kapalıyken pozisyon sadece stopla korunur.
 - **Günlük zarar limiti:** broker sunucu gününde, kapanan işlemler + açık pozisyonların stop riski + yeni işlemin
-  riski %2'yi aşacaksa bot o gün yeni işlem açmaz. Deal geçmişinden hesaplanır (bot yeniden başlatılsa da doğru).
+  riski %2'yi aşacaksa bot o gün yeni işlem açmaz.
 - **MT5 bağlantısı koparsa:** bot yeni işlem açmaz, bekleyerek yeniden bağlanmayı dener.
 - **Haber takvimi alınamazsa:** yeni işlem açılmaz (`haber.takvim_yoksa_islem_yok`).
 
-## Maliyet
+## Maliyet (LLM)
 
-Her aday için 6 LLM çağrısı yapılır (4 ajan + 2 yargıç). Ajanlar ucuz modelde, yargıç güçlü modelde çalışır.
-Filtreler önce çalıştığı için reddedilen adaylar LLM'e hiç gitmez; aynı mum için LLM'e ikinci kez gidilmez.
-Her kararın kaydında o adayın token kullanımı ve tahmini maliyeti (`llm_maliyet_usd`) bulunur
-(fiyatlar `config.yaml > llm.fiyat_usd_mtok`).
-Claude 5.5 modellerinde düşünme varsayılan olarak açıktır; düşünme derinliği `llm.claude_efor` ile ayarlanır.
-TradingAgents açıksa aday başına onlarca çağrı ve birkaç dakika eklenir.
+Gözlem ya da veto modunda aday başına 6 LLM çağrısı (4 ajan + 2 yargıç). Strateji yılda ~30-40 aday
+ürettiği için toplam maliyet çok düşüktür. Her kaydın içinde o adayın token kullanımı ve tahmini maliyeti
+(`llm_maliyet_usd`) vardır; `python araclar.py rapor` toplamı gösterir.
 
 ## Dosyalar
 
 ```
 main.py              ana döngü
-araclar.py           semboller / modeller / veri_indir / backtest
+araclar.py           semboller / modeller / veri_indir / backtest / rapor
 config.yaml          TÜM ayarlar
-bot/strateji.py      skor, üst trend, stop kuralı, lot yuvarlama (canlı ve backtest AYNI fonksiyonları kullanır)
+bot/strateji.py      strateji kuralları (canlı ve backtest AYNI fonksiyonları kullanır)
 bot/tarayici.py      tarama (az önce kapanan mum, açık piyasalar)
+bot/risk.py          filtre ajanı, plan, lot hesabı, günlük limit
+bot/emir.py          MT5 emirleri (emir atan tek yer, demo kilidi burada)
+bot/izleme.py        zaman stopu / başa baş / takip eden stop (mum kapanışında)
 bot/ajanlar.py       4 LLM ajanı ve promptları
 bot/karar.py         oy sayımı ve yargıç
-bot/risk.py          filtre ajanı, lot hesabı, günlük limit
-bot/emir.py          MT5 emirleri (emir atan tek yer, demo kilidi burada)
-bot/izleme.py        başa baş ve takip eden stop (mum kapanışında)
+bot/llm.py           Claude / Grok çağrıları, hata yönetimi, token takibi
+bot/rapor.py         karar kayıtlarından rapor
+bot/backtest.py      geçmiş test (portföy simülasyonu, maliyetler, kilitli dönem)
 bot/mt5_baglanti.py  bağlantı, demo kilidi, sunucu saati, kapanmış mumlar
 bot/haber.py         ekonomik takvim
-bot/llm.py           Claude / Grok çağrıları, hata yönetimi, token takibi
 bot/kayit.py         log ve karar kayıtları (anahtar maskeleme)
-bot/derin_analiz.py  TradingAgents bağlantısı (isteğe bağlı)
-bot/backtest.py      geçmiş test (portföy simülasyonu, maliyetler, kilitli dönem)
+bot/derin_analiz.py  TradingAgents bağlantısı (isteğe bağlı, sadece veto modunda)
+arastirma/           araştırma kodu (veri toplama, hipotez testleri); bot bunu kullanmaz
 tests/               otomatik testler (sahte MT5, sahte LLM)
-docs/                inceleme raporları
-kayitlar/            log, kararlar.csv, kararlar.jsonl, kilit.json
+docs/                inceleme raporu, araştırma günlüğü, kilitli dönem kaydı
+kayitlar/            log, kararlar.csv, kararlar.jsonl, raporlar
 ```
 
 > Bu yazılım yatırım tavsiyesi değildir. Kaldıraçlı ürünlerde sermayenin tamamı kaybedilebilir.

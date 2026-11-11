@@ -192,3 +192,29 @@ BNB +0.7R, SOL −0.3R, LTC −2.3R.
 
 **Toplam denenen hipotez: 11** (H0-H7, K1-K3). Ölçütlerin hepsini (kazanma oranı dahil) sağlayan: 0.
 Kazanma oranı ölçütü dışında hepsini sağlayan: 1 (K2).
+
+### 4.9 Bota uygulama ve doğrulama
+- K2, `bot/strateji.py` içinde `gunluk_kirilim` adıyla uygulandı ve varsayılan strateji yapıldı
+  (`config.yaml > strateji`). İlk strateji `trend_skor` adıyla duruyor ama kullanılmamalı.
+- **Eşlik kontrolleri (geliştirme dönemi, gerçek veri):** botun backtest motoru ile araştırma motoru
+  sembol başına 344 işlemin 344'ünde aynı (en büyük R farkı 4e-16); portföy modunda 199 işlemin 199'u aynı.
+- Testler (`python -m pytest`, 220+ test): canlı tarayıcı ile backtest aynı mumda aynı sinyali ve aynı stop
+  mesafesini üretir; zaman stopu canlıda ve backtest'te aynı mumda çalışır; araştırma ve bot motorları
+  sentetik veride de aynı işlemleri verir.
+- **Hesap büyüklüğü etkisi (TEST dönemi, canlı portföy kuralları, min lot 0.01):**
+  10.000 USD: 84 işlem, +0.182R, KF 1.43, yıllık %1.9, düşüş %7.0 (13 BTC işlemi min lot yüzünden açılamıyor);
+  25.000 USD: 85 işlem, +0.240R, KF 1.61, yıllık %3.3; 100.000 USD: yıllık %4.0, düşüş %4.3.
+- LLM katmanı varsayılan olarak **gözlem** modunda: oylar kaydedilir, işlemi engellemez. Gerekçe: doğrulanan
+  şey kural tabanlı stratejidir ve kazancı sağ kuyruktadır; "uzamış hareket" vetosu tam bunu silebilir.
+  LLM'in katkısı `python araclar.py rapor` ile demo kayıtlarından ölçülecek.
+- Eğitim dönemi yıllık getirisi: kripto verisi 2017-08'de başladığı ve 200 günlük ortalama gerektiği için
+  ilk sinyaller 2018-03'ten sonra; portföy toplamı +%33.7 / 3.5 yıl ≈ yıllık %9.5 (iki büyük boğa dönemi).
+
+### 4.10 Yapılmayanlar / açık konular
+- Broker verisiyle doğrulama yapılmadı (bu ortamdan MT5'e erişim yok).
+- Gerçek LLM API çağrısı yapılmadı; prompt/JSON davranışı ve maliyet ölçülmedi.
+- Haber filtresi ve marjin kontrolü backtest'te modellenmedi.
+- Kripto dışındaki sınıflarda (forex, endeks, emtia) bu ölçekte doğrulanmış bir kenar bulunamadı.
+- Denenmeyen ama makul sonraki adımlar (her biri yeni bir hipotezdir ve artık "görülmemiş" veri kalmadığı
+  için ancak ileriye dönük demo kayıtlarıyla doğrulanabilir): takip eden stoplu çıkış, haftalık ölçek,
+  coinler arası göreli güç sıralaması.

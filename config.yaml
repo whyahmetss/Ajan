@@ -15,7 +15,28 @@ onay_zaman_asimi_sn: 120  # Onay modunda bu sürede cevap gelmezse işlem açıl
 # Ayrıca kodda her emirden önce hesabın demo olduğu kontrol edilir (config ile kapatılamaz).
 sadece_demo: true
 
-zaman_dilimi: H1          # Tarama zaman dilimi: M15, M30, H1, H4
+# --- Strateji ---
+# gunluk_kirilim : Günlük kırılım momentumu, sadece alış, sadece kripto. 2017-2026 gerçek verisinde
+#                  araştırıldı; bir kez bakılan kilitli dönemde (2024-07 → 2026-11) doğrulandı.
+#                  Kazanma oranı ~%45-50, kâr az sayıda büyük işlemden gelir. Getiri küçüktür (bu risk
+#                  ayarlarıyla yılda ~%2.5-5). Ayrıntı ve çekinceler: docs/ARASTIRMA_GUNLUGU.md
+# trend_skor     : İlk strateji (EMA/ADX/kırılım skoru). Gerçek veride 2015-2024'ün HER yılında ZARARDA
+#                  çıktı (ort −0.09R). Sadece karşılaştırma için duruyor; KULLANMA.
+strateji:
+  ad: gunluk_kirilim
+  gunluk_kirilim:
+    siniflar: [kripto]      # sadece bu varlık sınıfları taranır (diğerlerinde etki bulunamadı)
+    kirilim_gun: 20         # dünkü günlük kapanış son 20 günün en yüksek kapanışı olmalı
+    trend_gun: 200          # ve 200 günlük ortalamanın üstünde olmalı
+    sl_gunluk_atr: 2.0      # stop = giriş − 2 x günlük ATR
+    tp_gunluk_atr: null     # hedef YOK (kazananı kesme). 1.0 yazarsan kazanma oranı ~%60 olur ama
+                            # kilitli dönemde kenarı kayboldu (canlı kurallarla −0.04R): ÖNERİLMEZ
+    max_mum: 240            # 240 H1 mumu (10 gün) sonra pozisyon piyasadan kapatılır
+    gunluk_bar: 6000        # günlük değerler için çekilecek H1 mum sayısı (>= 250 gün)
+  # Bu değerler araştırmada sabitlendi. Değiştirirsen backtest'i baştan çalıştır; kilitli dönem
+  # artık "görülmemiş" sayılmaz.
+
+zaman_dilimi: H1          # Tarama zaman dilimi (gunluk_kirilim H1 ile doğrulandı; değiştirme)
 ust_zaman_dilimi: H4      # Trend teyidi için üst zaman dilimi
 tarama_bar: 1000          # Her sembol için kaç mum çekilsin (EMA200'ün oturması için >= 1000)
 mum_kapanis_gecikme_sn: 15  # Mum kapandıktan kaç sn sonra taransın
@@ -43,7 +64,7 @@ haric_semboller: []
 # --- Tarayıcı (LLM'siz, ücretsiz ön eleme) ---
 tarayici:
   max_aday: 3              # Her taramada ajanlara gönderilecek en iyi aday sayısı
-  min_skor: 60             # 0-100 arası; altı direkt elenir
+  min_skor: 60             # (sadece trend_skor) 0-100 arası; altı direkt elenir
   max_spread_atr_orani: 0.12  # Spread, ATR'nin %12'sinden büyükse sembol elenir
   min_bar: 220
 
@@ -51,6 +72,14 @@ tarayici:
 # Model isimleri zamanla değişir. "python araclar.py modeller" ile
 # hesabında açık olan güncel isimleri görüp buraya yaz.
 llm:
+  # LLM katmanının işlemlere etkisi:
+  #   gozlem : ajanlar ve yargıçlar oy verir, hepsi kaydedilir ama işlemi ENGELLEMEZ. (VARSAYILAN)
+  #            Doğrulanan şey kural tabanlı stratejidir; LLM'lerin katkısı henüz ölçülmedi. Ayı ajanı
+  #            "aşırı uzamış hareket" diye kırılımları veto ederse stratejinin kazancını (büyük
+  #            hareketleri) siler. Kayıtlar biriktikten sonra katkıları raporla ölçülür.
+  #   veto   : eski davranış; oy sayımı ya da yargıç reddederse işlem açılmaz.
+  #   kapali : LLM hiç çağrılmaz (API anahtarı gerekmez, maliyet sıfır).
+  mod: gozlem
   claude: claude-sonnet-5-5       # Karar (yargıç) için güçlü model
   claude_hizli: claude-haiku-5-5  # Ajanlar için ucuz/hızlı model
   grok: grok-4
@@ -103,7 +132,9 @@ risk:
   gunluk_max_zarar_yuzde: 2.0   # Broker sunucu gününde: gerçekleşen + açık stoplar + yeni işlem riski
                                 # bu sınırı aşacaksa yeni işlem açılmaz
   max_acik_pozisyon: 4
-  max_ayni_doviz: 2             # Aynı dövize (ör. USD) bağlı en fazla 2 pozisyon
+  max_ayni_doviz: 2             # Aynı dövize (ör. USD) bağlı en fazla 2 pozisyon. Kriptoların hepsi USD
+                                # sayılır: aynı anda en fazla 2 kripto pozisyonu (hepsi birlikte hareket eder)
+  # Aşağıdaki beş ayar SADECE trend_skor stratejisi içindir (gunluk_kirilim kendi çıkışını kullanır):
   sl_atr_carpan: 1.5            # Stop = giriş ± 1.5 x ATR
   tp_r: 2.0                     # Hedef = 2R (riskin 2 katı)
   breakeven_r: 1.0              # Mum kapanışında 1R kârdaysa stop girişe çekilir

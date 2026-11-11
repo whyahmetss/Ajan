@@ -19,7 +19,7 @@ import MetaTrader5 as mt5
 import yaml
 from dotenv import load_dotenv
 
-from bot import ajanlar, haber, izleme, karar, kayit, mt5_baglanti as mb, risk, tarayici
+from bot import ajanlar, haber, izleme, karar, kayit, mt5_baglanti as mb, risk, strateji, tarayici
 from bot.derin_analiz import DerinAnaliz
 from bot.emir import piyasa_emri
 from bot.llm import LLM, kullanim_farki
@@ -31,7 +31,7 @@ _islenmis: set = set()          # (sembol, mum_zamani): aynı mum için LLM'e ik
 
 def _plan_kaydi(plan: dict) -> dict:
     return {k: (round(plan[k], 8) if isinstance(plan.get(k), float) else plan.get(k))
-            for k in ("giris", "sl", "tp", "mesafe", "atr", "spread", "analiz_giris")}
+            for k in ("giris", "sl", "tp", "mesafe", "atr", "spread", "analiz_giris", "max_mum")}
 
 
 # ------------------------------------------------------------------ onay (zaman aşımlı)
@@ -94,7 +94,7 @@ def aday_isle(aday, cfg, llm, derin, olaylar, takvim_ok, siniflar):
         return
     _islenmis.add(anahtar)
     temel = {"sembol": aday["sembol"], "sinif": aday["sinif"], "yon": aday["yon"], "skor": aday["skor"],
-             "mum_zamani": aday["mum_zamani"], "mod": cfg["mod"]}
+             "mum_zamani": aday["mum_zamani"], "mod": cfg["mod"], "strateji": aday.get("strateji", "trend_skor")}
     once = llm.kullanim_kopya()
 
     def yaz(**alanlar):
@@ -102,7 +102,7 @@ def aday_isle(aday, cfg, llm, derin, olaylar, takvim_ok, siniflar):
         kayit.karar_yaz(k, {**temel, **alanlar, "llm_kullanim": fark,
                             "llm_maliyet_usd": round(llm.maliyet_usd(fark)[0], 6)})
 
-    log.info("── ADAY %s %s (skor %d, mum %s): %s", aday["yon"], aday["sembol"], aday["skor"],
+    log.info("── ADAY %s %s (skor %s, mum %s): %s", aday["yon"], aday["sembol"], aday["skor"],
              aday["mum_zamani"], ", ".join(aday["nedenler"]))
 
     plan_llm = risk.plan_olustur(aday, cfg)
@@ -120,48 +120,53 @@ def aday_isle(aday, cfg, llm, derin, olaylar, takvim_ok, siniflar):
         log.info("   Lot RED: %s", n)
         return yaz(asama="lot", sonuc="RED", neden=n, plan=pk)
 
-    # 4 LLM ajanı (paralel)
-    baglam = ajanlar.baglam_olustur(aday, plan_llm, olaylar, risk.pozisyon_ozeti(cfg["magic"], siniflar))
-    oylar = ajanlar.ajanlari_calistir(llm, cfg, baglam)
-    for o in oylar:
-        log.info("   %-5s [%s] %-6s %3d  %s", o["ajan"], o["model"], o["oy"], o["guven"],
-                 " / ".join(o["gerekceler"][:2]))
-    gecti, neden = karar.oy_sayimi(oylar, cfg)
-    if not gecti:
-        log.info("   Oy RED: %s", neden)
-        return yaz(asama="oy", sonuc="RED", neden=neden, oylar=oylar, plan=pk)
+    # LLM katmanı. Mod: veto (reddederse işlem yok) | gozlem (oylar kaydedilir, işlemi etkilemez) | kapali
+    llm_mod = cfg["llm"].get("mod", "veto")
+    ortak, yargic_ozet = {"llm_mod": llm_mod}, ""
+    if llm_mod != "kapali":
+        baglam = ajanlar.baglam_olustur(aday, plan_llm, olaylar, risk.pozisyon_ozeti(cfg["magic"], siniflar))
+        oylar = ajanlar.ajanlari_calistir(llm, cfg, baglam)
+        for o in oylar:
+            log.info("   %-5s [%s] %-6s %3d  %s", o["ajan"], o["model"], o["oy"], o["guven"],
+                     " / ".join(o["gerekceler"][:2]))
+        gecti, neden = karar.oy_sayimi(oylar, cfg)
+        ortak.update(oylar=oylar, oy_sonucu=neden)
+        if not gecti and llm_mod == "veto":
+            log.info("   Oy RED: %s", neden)
+            return yaz(asama="oy", sonuc="RED", neden=neden, plan=pk, **ortak)
+        # Yargıç: veto modunda oy sayımı geçtiyse; gözlem modunda her zaman (karşılaştırma verisi için)
+        sonuc = karar.karar_ver(llm, cfg, baglam, oylar)
+        yargic_ozet = sonuc["ozet"]
+        ortak.update(yargiclar=sonuc["yargiclar"], llm_onay=bool(gecti and sonuc["onay"]))
+        log.info("   Yargıç: %s", yargic_ozet)
+        if llm_mod == "veto":
+            if not sonuc["onay"]:
+                return yaz(asama="yargic", sonuc="RED", neden=yargic_ozet, plan=pk, **ortak)
+            if derin.aktif:
+                log.info("   TradingAgents derin analiz çalışıyor (birkaç dakika sürebilir)...")
+                d_ok, d_neden = derin.onayliyor_mu(aday)
+                log.info("   %s", d_neden)
+                if not d_ok:
+                    return yaz(asama="derin", sonuc="RED", neden=d_neden, plan=pk, **ortak)
+        else:
+            log.info("   LLM görüşü (gözlem modu, işlemi ETKİLEMEZ): %s",
+                     "ONAY" if ortak["llm_onay"] else f"RED ({neden if not gecti else 'yargıç'})")
 
-    # Yargıç
-    sonuc = karar.karar_ver(llm, cfg, baglam, oylar)
-    log.info("   Yargıç: %s", sonuc["ozet"])
-    if not sonuc["onay"]:
-        return yaz(asama="yargic", sonuc="RED", neden=sonuc["ozet"], oylar=oylar,
-                   yargiclar=sonuc["yargiclar"], plan=pk)
-
-    if derin.aktif:
-        log.info("   TradingAgents derin analiz çalışıyor (birkaç dakika sürebilir)...")
-        d_ok, d_neden = derin.onayliyor_mu(aday)
-        log.info("   %s", d_neden)
-        if not d_ok:
-            return yaz(asama="derin", sonuc="RED", neden=d_neden, oylar=oylar,
-                       yargiclar=sonuc["yargiclar"], plan=pk)
-
-    ortak = {"oylar": oylar, "yargiclar": sonuc["yargiclar"]}
     # LLM'ler düşünürken durum değişmiş olabilir: plan, kayma, filtre ve lot baştan
     plan, lot, lot_not = son_kontrol(aday, plan_llm, cfg, olaylar, siniflar, takvim_ok)
     if plan is None:
         log.info("   Son kontrol RED: %s", lot_not)
         return yaz(asama="son_kontrol", sonuc="RED", neden=lot_not, plan=pk, **ortak)
 
-    ozet = (f"{plan['yon']} {lot} lot {plan['sembol']} @ {plan['giris']} | SL {plan['sl']} | "
-            f"TP {plan['tp']} | {lot_not}")
+    hedef = f"TP {plan['tp']}" if plan["tp"] else f"hedef yok, {plan['max_mum']} mum sonra zaman stopu"
+    ozet = (f"{plan['yon']} {lot} lot {plan['sembol']} @ {plan['giris']} | SL {plan['sl']} | {hedef} | {lot_not}")
     mod = cfg["mod"]
     if mod == "sinyal":
         log.info("   SİNYAL (emir atılmadı): %s", ozet)
         return yaz(asama="sinyal", sonuc="SINYAL", lot=lot, neden=ozet, plan=_plan_kaydi(plan), **ortak)
     if mod == "onay":
         za = cfg.get("onay_zaman_asimi_sn", 120)
-        cevap = onay_iste(f"\n>>> İŞLEM ÖNERİSİ: {ozet}\n>>> {sonuc['ozet']}\n"
+        cevap = onay_iste(f"\n>>> İŞLEM ÖNERİSİ: {ozet}\n>>> {yargic_ozet}\n"
                           f">>> Açılsın mı? (e/h, {za} sn içinde): ", za)
         if not cevap:
             neden = "Kullanıcı reddetti" if cevap is False else f"Onay {za} sn içinde gelmedi"
@@ -172,7 +177,9 @@ def aday_isle(aday, cfg, llm, derin, olaylar, takvim_ok, siniflar):
             log.info("   Onay sonrası kontrol RED: %s", lot_not)
             return yaz(asama="son_kontrol", sonuc="RED", neden=f"Onay sonrası: {lot_not}", plan=pk, **ortak)
 
-    basarili, mesaj = piyasa_emri(plan, lot, cfg, yorum=f"ajanbot s{aday['skor']}")
+    # Emir yorumu: zaman stoplu stratejide "z<mum>" etiketi (izleme bunu okur), eskide skor
+    etiket = f"gk z{plan['max_mum']}" if plan.get("max_mum") else f"s{aday['skor']}"
+    basarili, mesaj = piyasa_emri(plan, lot, cfg, yorum=f"ajanbot {etiket}")
     log.info("   EMİR %s: %s", "OK" if basarili else "HATA", mesaj)
     yaz(asama="emir", sonuc="ACILDI" if basarili else "HATA", lot=lot, neden=mesaj,
         plan=_plan_kaydi(plan), **ortak)
@@ -220,14 +227,17 @@ def main():
         raise SystemExit(str(ex))
     llm, derin = LLM(cfg), DerinAnaliz(cfg)
     _islenmis.update(kayit.islenmis_adaylar(yol(cfg["log_klasoru"])))
-    liste = mb.semboller(cfg)
+    izinli = set(strateji.aktif(cfg)[1].get("siniflar") or [])
+    liste = [s for s in mb.semboller(cfg) if not izinli or s["sinif"] in izinli]
     if not liste:
-        raise SystemExit("Taranacak sembol bulunamadı. 'python araclar.py semboller' ile kontrol et.")
+        raise SystemExit(f"Taranacak sembol bulunamadı (strateji sınıfları: {sorted(izinli) or 'hepsi'}). "
+                         "'python araclar.py semboller' ile broker'ındaki sembollerin sınıflarını kontrol et.")
     isimler = [s["ad"] for s in liste]
     mb.ofset_guncelle(isimler)
     ofset = mb.ofset_sn()
-    log.info("Mod: %s | Zaman dilimi: %s | Taranacak sembol: %d | Karar: %s | Sunucu saati: %s",
-             cfg["mod"], cfg["zaman_dilimi"], len(liste), cfg["karar_modu"],
+    log.info("Mod: %s | Strateji: %s | LLM: %s | Zaman dilimi: %s | Sembol: %d | Karar: %s | Sunucu saati: %s",
+             cfg["mod"], strateji.aktif(cfg)[0], cfg["llm"].get("mod", "veto"), cfg["zaman_dilimi"], len(liste),
+             cfg["karar_modu"],
              "bilinmiyor" if ofset is None else f"UTC{ofset / 3600:+.0f}")
 
     if args.bir_kez:

@@ -9,6 +9,10 @@
   python araclar.py backtest --skorlar 50,60,70,80 --semboller EURUSD,XAUUSD,US100,BTCUSD
   python araclar.py backtest --tek            -> Portföy kuralları olmadan, sembol başına
   python araclar.py backtest --kilidi-ac      -> KİLİTLİ son dönemi test et (strateji bitince, BİR kez)
+  python araclar.py rapor                     -> Karar kayıtlarından rapor: ajanlar ne kadar isabetli, LLM katmanı
+  python araclar.py rapor --gun 7                değer katıyor mu? (--gun: sadece son N gün)
+
+Backtest ve veri_indir, config'teki aktif stratejinin (strateji.ad) sınıflarını ve kurallarını kullanır.
 """
 import argparse
 import json
@@ -72,10 +76,12 @@ def modeller_komut():
 
 
 def _liste(cfg, sembol_listesi):
-    from bot import mt5_baglanti as mb
+    """Taranacak semboller: aktif stratejinin varlık sınıflarıyla sınırlı."""
+    from bot import backtest, mt5_baglanti as mb
     if sembol_listesi:
         cfg["manuel_semboller"] = sembol_listesi
-    return mb.semboller(cfg)
+    izinli = backtest.izinli_siniflar(cfg)
+    return [s for s in mb.semboller(cfg) if not izinli or s["sinif"] in izinli]
 
 
 def spread_kontrol(ad: str, zd: str, gun: int) -> dict | None:
@@ -168,10 +174,42 @@ def backtest_komut(cfg, a):
         print(f"\nTüm işlemler: {dosya}")
 
 
+def rapor_komut(cfg, gun):
+    """Kayıtlardaki her adayın planını sonraki gerçek fiyatlarla sanal olarak oynatır ve raporlar."""
+    import MetaTrader5 as mt5
+    import pandas as pd
+    from bot import mt5_baglanti as mb, rapor
+    klasor = yol(cfg["log_klasoru"])
+    kayitlar = rapor.kayitlari_oku(klasor)
+    if not kayitlar:
+        print(f"Henüz karar kaydı yok ({klasor / 'kararlar.jsonl'}). Bot bir süre çalıştıktan sonra tekrar dene.")
+        return
+    _baglan()
+    zd = cfg["zaman_dilimi"]
+
+    def mum_getir(sembol, giris_t):
+        mb.sec(sembol)
+        si, tick = mt5.symbol_info(sembol), mt5.symbol_info_tick(sembol)
+        r = mt5.copy_rates_range(sembol, mb.ZAMAN_DILIMLERI[zd], giris_t, int(tick.time) + 86400)
+        df = pd.DataFrame(r)
+        return df[df["time"] < mb.mum_baslangici(int(tick.time), zd)].reset_index(drop=True), si.point   # kapanmış mumlar
+
+    df = rapor.sonuclari_hesapla(kayitlar, mum_getir, cfg)
+    mt5.shutdown()
+    metin = rapor.rapor_metni(kayitlar, df, gun)
+    print(metin)
+    dosya = klasor / f"rapor_{pd.Timestamp.now():%Y%m%d}.txt"
+    dosya.write_text(metin, encoding="utf-8")
+    if len(df):
+        df.to_csv(klasor / "rapor_adaylar.csv", index=False, sep=";", encoding="utf-8-sig")
+    print(f"\nRapor: {dosya}")
+
+
 if __name__ == "__main__":
     load_dotenv(yol(".env"))
     ap = argparse.ArgumentParser()
-    ap.add_argument("komut", choices=["semboller", "modeller", "veri_indir", "backtest"])
+    ap.add_argument("komut", choices=["semboller", "modeller", "veri_indir", "backtest", "rapor"])
+    ap.add_argument("--gun", type=int, default=0, help="rapor: sadece son N gün (0 = hepsi)")
     ap.add_argument("--yil", type=float, default=4.0, help="Kaç yıllık veri (ısınma payı ayrıca eklenir)")
     ap.add_argument("--klasor", default="veri", help="veri_indir: kayıt klasörü")
     ap.add_argument("--tick-gun", type=int, default=0, help="veri_indir: spread kontrolü için kaç günlük tick")
@@ -187,6 +225,8 @@ if __name__ == "__main__":
         semboller_komut(cfg)
     elif a.komut == "modeller":
         modeller_komut()
+    elif a.komut == "rapor":
+        rapor_komut(cfg, a.gun or None)
     elif a.komut == "veri_indir":
         veri_indir_komut(cfg, a.yil, a.klasor, [x.strip() for x in a.semboller.split(",") if x.strip()], a.tick_gun)
     else:
