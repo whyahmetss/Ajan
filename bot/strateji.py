@@ -59,6 +59,40 @@ def yon_skoru(d, yon: int, ust_trend: int) -> tuple[int, list[str]]:
     return max(0, min(100, skor)), neden
 
 
+def skor_dizisi(d, ust_trend) -> tuple:
+    """yon_skoru'nun BÜTÜN mumlar için vektörel eşdeğeri (backtest için hızlı sürüm).
+    d: indikatörlü mumlar, ust_trend: her mum için +1/0/-1. Dönüş: (yon dizisi, skor dizisi).
+    tests/test_strateji.py, her mumda yon_skoru ile birebir aynı sonucu verdiğini doğrular."""
+    c, e20, e50, e200 = (d[k].to_numpy(float) for k in ("close", "ema20", "ema50", "ema200"))
+    rsi, adx, lo, hi = (d[k].to_numpy(float) for k in ("rsi", "adx", "low", "high"))
+    dcu, dcl = d["dc_ust"].to_numpy(float), d["dc_alt"].to_numpy(float)
+    ut = np.asarray(ust_trend)
+    rsi_once = np.r_[np.nan, rsi[:-1]]
+
+    def son3(x):                                   # son 3 mumdan herhangi biri
+        return x | np.r_[False, x[:-1]] | np.r_[False, False, x[:-2]]
+    with np.errstate(invalid="ignore"):
+        adx_puan = np.where(adx >= 30, 20, np.where(adx >= 20, 10, 0))
+        skorlar = []
+        for yon in (1, -1):
+            if yon > 0:
+                trend = (e50 > e200) & (c > e50)
+                kirilim = c > dcu
+                dokundu, donus = son3(lo <= e20), (c > e20) & (rsi > rsi_once)
+                rsi_puan = np.where(rsi > 78, -15, np.where((rsi >= 50) & (rsi <= 70), 10, 0))
+            else:
+                trend = (e50 < e200) & (c < e50)
+                kirilim = c < dcl
+                dokundu, donus = son3(hi >= e20), (c < e20) & (rsi < rsi_once)
+                rsi_puan = np.where(rsi < 22, -15, np.where((rsi >= 30) & (rsi <= 50), 10, 0))
+            geri = trend & dokundu & donus & (rsi >= 38) & (rsi <= 62)
+            sk = (30 * trend + np.where(ut == yon, 15, np.where(ut == -yon, -20, 0)) + adx_puan
+                  + 25 * kirilim + 25 * geri - 25 * ~(kirilim | geri) + rsi_puan)
+            skorlar.append(np.clip(sk, 0, 100))
+    al, sat = skorlar
+    return np.where(al >= sat, 1, -1).astype(np.int8), np.maximum(al, sat).astype(np.int16)
+
+
 def trend_degeri(ema50, ema200, close):
     """+1 / -1 / 0 (skaler ya da numpy dizisi)."""
     return np.where((ema50 > ema200) & (close > ema50), 1, np.where((ema50 < ema200) & (close < ema50), -1, 0))

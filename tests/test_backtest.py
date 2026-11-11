@@ -270,3 +270,9 @@ def test_eksik_sembol_bilgisi_atlanir(cfg):
     v = backtest.veri_hazirla("X", "forex", {**STANDART_BILGI, "trade_tick_size": 0}, pd.DataFrame(h1),
                               pd.DataFrame(ust_mumlar(h1)), cfg, onbellek=None)
     assert v is None
+
+
+def test_sembole_ozgu_yuzde_komisyon(prm):
+    v = _sv("EURUSD", [DUZ, (1.1, 1.1031, 1.0995, 1.102)], {0: (1, 80)}, komisyon_yuzde=0.007)
+    tr = backtest.islem_simule(v, 0, prm)
+    assert tr["R"] == pytest.approx(2.0 - 0.00007 * 1.1 / 0.0015)          # ~0.05R

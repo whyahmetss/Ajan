@@ -19,8 +19,6 @@ Kurallar (kendimizi kandırmamak için):
 - Max düşüş, işlemler ÇIKIŞ ZAMANINA göre sıralanarak hesaplanır.
 - Her min_skor eşiği AYRI simüle edilir (eşik değişince işlem dizisi de değişir).
 """
-import hashlib
-import inspect
 import json
 import logging
 import math
@@ -32,8 +30,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import haber, indikator, strateji
-from .strateji import DAKIKA, UST_TREND_MIN_BAR, adima_yuvarla, trend_degeri, yeni_stop, yon_skoru
+from . import haber, indikator
+from .strateji import DAKIKA, UST_TREND_MIN_BAR, adima_yuvarla, skor_dizisi, trend_degeri, yeni_stop
 from .yollar import yol
 
 log = logging.getLogger("backtest")
@@ -124,35 +122,12 @@ def _ust_trend_dizisi(t_alt: np.ndarray, ust: pd.DataFrame, p_alt: int, p_ust: i
     return np.where(pos >= 0, tr[np.clip(pos, 0, None)], 0).astype(np.int8)
 
 
-def _kod_ozeti() -> str:
-    kaynak = (inspect.getsource(strateji.yon_skoru) + inspect.getsource(strateji.trend_degeri)
-              + inspect.getsource(indikator) + inspect.getsource(_ust_trend_dizisi) + str(UST_TREND_MIN_BAR))
-    return hashlib.sha1(kaynak.encode()).hexdigest()[:12]
-
-
-def sinyaller(ad: str, d: pd.DataFrame, ut: np.ndarray, bas: int, onbellek: Path | None):
-    """Her mum için (yön, skor): canlıdaki AYNI strateji.yon_skoru ile. Yavaş olduğu için
-    veri + kod özetine göre diske önbelleklenir (kod değişirse önbellek geçersiz olur)."""
-    h = hashlib.sha1()
-    for x in (ad.encode(), d["time"].to_numpy(np.int64).tobytes(), d["close"].to_numpy().tobytes(),
-              ut.tobytes(), str(bas).encode(), _kod_ozeti().encode()):
-        h.update(x)
-    dosya = None
-    if onbellek is not None:
-        dosya = Path(onbellek) / f"sinyal_{re.sub(r'[^A-Za-z0-9]', '_', ad)}_{h.hexdigest()[:16]}.npz"
-        if dosya.exists():
-            z = np.load(dosya)
-            return z["yon"], z["skor"]
-    n = len(d)
-    yon, skor = np.zeros(n, np.int8), np.zeros(n, np.int16)
-    for i in range(max(bas, 2), n):
-        p = d.iloc[i - 2:i + 1]
-        sa, _ = yon_skoru(p, 1, int(ut[i]))
-        ss, _ = yon_skoru(p, -1, int(ut[i]))
-        yon[i], skor[i] = (1, sa) if sa >= ss else (-1, ss)
-    if dosya is not None:
-        dosya.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(dosya, yon=yon, skor=skor)
+def sinyaller(d: pd.DataFrame, ut: np.ndarray, bas: int):
+    """Her mum için (yön, skor): strateji.skor_dizisi (canlıdaki yon_skoru'nun vektörel eşdeğeri;
+    eşdeğerlik testle doğrulanır). Isınma dönemindeki mumlar 0 skor alır."""
+    yon, skor = skor_dizisi(d, ut)
+    yon, skor = yon.copy(), skor.copy()
+    yon[:max(bas, 2)], skor[:max(bas, 2)] = 0, 0
     return yon, skor
 
 
@@ -172,7 +147,7 @@ def veri_hazirla(ad: str, sinif: str, bilgi: dict, alt: pd.DataFrame, ust: pd.Da
     d = indikator.ekle(alt)
     t = alt["time"].to_numpy(np.int64)
     ut = _ust_trend_dizisi(t, ust, p, pu)
-    yon, skor = sinyaller(ad, d, ut, isinma, onbellek)
+    yon, skor = sinyaller(d, ut, isinma)
     ardisik = np.zeros(len(t), bool)
     ardisik[:-1] = (t[1:] - t[:-1]) == p
     cumartesi = (((t // 86400) + 3) % 7) == 5                    # 1970-01-01 Perşembe; Pzt=0
@@ -278,7 +253,8 @@ def islem_simule(v: SembolVerisi, i: int, prm: Prm, son: int | None = None) -> d
         kc, durum = n_son, "SON"
         cikis = c[n_son] if al else c[n_son] + sp_pt[n_son] * point * mult
     R_brut = ((cikis - giris) if al else (giris - cikis)) / m
-    kom = prm.komisyon_lot / kayip_lot
+    # komisyon: lot başına sabit (config) + sembole özgü, pozisyon değerinin yüzdesi (veri dosyasında varsa)
+    kom = prm.komisyon_lot / kayip_lot + (b.get("komisyon_yuzde") or 0.0) / 100 * giris / m
     swp = _swap_R(v, prm, al, int(v.t[j]), int(v.t[kc]), m, giris)
     return {"sembol": v.ad, "sinif": v.sinif, "yon": "AL" if al else "SAT", "skor": int(v.skor[i]),
             "i": int(i), "k": int(kc), "giris_t": int(v.t[j]), "cikis_t": int(v.t[kc]), "cikis": durum,
@@ -296,7 +272,7 @@ def _adaylar(v: SembolVerisi, prm: Prm, kesim: Kesim) -> dict:
         if i < v.isinma or i + 1 > son or not (kesim.bas <= v.t[i + 1] < kesim.bit):
             continue
         a = v.atr[i]
-        if not a > 0 or v.sp_pt[i] * point * mult / a > prm.max_spread_atr_orani:
+        if not a > 0 or v.sp_pt[i + 1] * point * mult / a > prm.max_spread_atr_orani:   # giriş anındaki spread
             continue
         out[i] = islem_simule(v, i, prm, son)
     return out
@@ -342,7 +318,7 @@ def portfoy_simule(veriler: list[SembolVerisi], prm: Prm, kesim: Kesim, cfg) -> 
             if any(sum(1 for p in acik if d in p["dov"]) >= r["max_ayni_doviz"] for d in dov):
                 continue
             acik_risk = sum(p["tr"]["risk_yuzde"] for p in acik if p["be_T"] is None or p["be_T"] > T)
-            if gunluk.get(T // 86400, 0.0) - acik_risk - prm.risk_yuzde < -r["gunluk_max_zarar_yuzde"]:
+            if gunluk.get(T // 86400, 0.0) - acik_risk - prm.risk_yuzde < -r["gunluk_max_zarar_yuzde"] * (1 + 1e-9):
                 continue
             be_T = None if tr["be_k"] is None else int(v.t[tr["be_k"]]) + v.periyot
             acik.append({"tr": tr, "dov": dov, "kapanis_T": tr["cikis_t"] + v.periyot, "be_T": be_T})

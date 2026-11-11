@@ -9,7 +9,8 @@ from tests.yardimci import STANDART_BILGI, rastgele_mumlar, ust_mumlar
 
 
 def test_canli_ve_backtest_ayni_fonksiyonlari_kullanir():
-    assert tarayici._yon_skoru is strateji.yon_skoru is backtest.yon_skoru
+    assert tarayici._yon_skoru is strateji.yon_skoru
+    assert backtest.skor_dizisi is strateji.skor_dizisi      # yon_skoru'nun vektörel eşdeğeri (aşağıdaki test)
     assert izleme.yeni_stop is strateji.yeni_stop is backtest.yeni_stop
     assert risk.adima_yuvarla is strateji.adima_yuvarla is backtest.adima_yuvarla
 
@@ -94,3 +95,21 @@ def test_mum_saatleri_UTC(cfg, mt5, veri, monkeypatch):
 def test_sunucu_saati_bilinmiyorsa_tarama_yok(cfg, mt5):
     mb._saat["ofset"] = None
     assert tarayici.tara(cfg) == []
+
+
+@pytest.mark.parametrize("tohum", [1, 2, 3])
+def test_skor_dizisi_yon_skoru_ile_birebir_ayni(tohum):
+    """Backtest'in hızlı (vektörel) skoru, canlıdaki yon_skoru ile HER mumda aynı yön ve skoru verir."""
+    from bot import indikator
+    h1 = rastgele_mumlar(1500, tohum=tohum)
+    d = indikator.ekle(pd.DataFrame(h1))
+    rng = np.random.default_rng(tohum)
+    ut = rng.choice([-1, 0, 1], len(d))
+    yon, skor = strateji.skor_dizisi(d, ut)
+    for i in range(2, len(d)):
+        p = d.iloc[i - 2:i + 1]
+        sa, _ = strateji.yon_skoru(p, 1, int(ut[i]))
+        ss, _ = strateji.yon_skoru(p, -1, int(ut[i]))
+        beklenen = (1, sa) if sa >= ss else (-1, ss)
+        assert (int(yon[i]), int(skor[i])) == beklenen, i
+    assert (skor >= 60).sum() > 20          # test anlamlı: gerçek sinyaller de karşılaştırıldı
