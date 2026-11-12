@@ -457,3 +457,49 @@ Risk ayarı (hipotez değil, ödünleşim tablosu): aynı anda en fazla kripto p
 birlikte raporlanır; karar kullanıcıya aittir, varsayılan değişmez.
 
 Geçen aday olursa bile bota taşıma ayrı onaya bağlıdır.
+
+### 9.1 SONUÇ — üçüncü tur (tek koşu, 2026-11-12; çıktı: `docs/arastirma2_tur3_ciktisi.txt`)
+Portföy kurallarıyla, maliyet + kayma dahil:
+
+| Aday | Bölüm | İşlem | WR | Ort R | PF | Azami düşüş | Yıllık | p (rastgele) |
+|---|---|---|---|---|---|---|---|---|
+| K2 (mevcut) | eğitim | 114 | %50.9 | +0.588 | 2.60 | %3.5 | %5.1 | 0.0008 |
+| | doğrulama | 85 | %45.9 | +0.235 | 1.59 | %4.3 | %3.6 | 0.005 |
+| S1 (satış tarafı) | eğitim | 79 | %40.5 | −0.023 | 0.93 | %5.8 | −%0.1 | 0.015 |
+| | doğrulama | 78 | %44.9 | +0.002 | 1.01 | %5.3 | %0.0 | 0.19 |
+| B1 (BTC rejim filtresi) | eğitim | 94 | %51.1 | +0.733 | 3.00 | %2.5 | %5.3 | 0.0006 |
+| | doğrulama | 75 | %50.7 | +0.289 | 1.80 | %3.4 | %3.9 | 0.004 |
+| X1 (K2 endeks/altın) | eğitim | 96 | %41.7 | −0.145 | 0.73 | %7.6 | −%1.1 | 0.89 |
+| | doğrulama | 46 | %58.7 | +0.241 | 1.77 | %2.4 | %2.0 | 0.15 |
+
+**Üçü de ELENDİ.** Örneklem dışı kontroller açılmadı.
+- **S1:** kriptoda düşüş momentumu işlem yapılabilir bir kenar vermiyor (beklenti ≈ 0). Ayı yıllarını satışla
+  kazanca çevirme fikri tutmadı.
+- **B1:** her ölçüyü geçti ve her iki bölümde K2'den biraz iyi görünüyor (daha yüksek ort R, daha düşük düşüş),
+  ama fark istatistiksel olarak gösterilemedi (doğrulamada %90 aralığı sıfırı içeriyor) → ölçüt 7'de kaldı.
+  V1 ve T2 ile aynı tablo: K2'nin küçük çeşitlemeleri, kanıtlanabilir bir iyileşme değil.
+- **X1:** eğitimde negatif ve rastgele girişten kötü; doğrulamadaki pozitif sonuç 46 işlem ve anlamsız (p = 0.15).
+
+### 9.2 Risk ayarı ödünleşimi — aynı anda en fazla kripto pozisyonu (`docs/pozisyon_siniri_ciktisi.txt`)
+K2, işlem başı %0.5 risk değişmeden:
+
+| En fazla kripto pozisyonu | Dönem | İşlem | Ort R | PF | Yıllık | Azami düşüş | MC düşüş %95 |
+|---|---|---|---|---|---|---|---|
+| 2 (şimdiki) | eğitim | 114 | +0.588 | 2.60 | %5.1 | %3.5 | %4.9 |
+| | doğrulama | 85 | +0.235 | 1.59 | %3.6 | %4.3 | %5.2 |
+| | kilitli | 55 | +0.205 | 1.48 | %2.4 | %4.1 | %5.7 |
+| 3 | eğitim | 146 | +0.651 | 2.86 | %7.3 | %4.1 | %5.4 |
+| | doğrulama | 108 | +0.266 | 1.67 | %5.1 | %5.7 | %6.2 |
+| | kilitli | 69 | +0.245 | 1.59 | %3.6 | %4.2 | %6.4 |
+| 4 | eğitim | 167 | +0.822 | 3.27 | %10.5 | %3.3 | %5.2 |
+| | doğrulama | 125 | +0.221 | 1.52 | %4.9 | %7.7 | %7.4 |
+| | kilitli | 81 | +0.180 | 1.40 | %3.1 | %6.2 | %7.9 |
+
+Okuma: 2 → 3 pozisyon, üç dönemde de getiriyi yaklaşık 1.4–1.5 katına çıkarıyor (kilitli: %2.4 → %3.6),
+düşüş sınırlı artıyor. 3 → 4'te doğrulama ve kilitli dönemde getiri artmıyor, düşüş belirgin artıyor.
+Bu yeni bir kenar değil, aynı kenardan daha fazla risk almaktır; kilitli dönem daha önce görüldüğü için
+bu tablo bir kanıt değil, bir ödünleşim tablosudur. Varsayılan (2) değiştirilmedi; karar kullanıcıya ait.
+
+### 9.3 Toplam durum (20 hipotez)
+Geçen tek strateji K2. Üç turda denenen her alternatif ya maliyetten sonra negatif çıktı ya da K2'den
+kanıtlanabilir biçimde iyi değildi. Eldeki veriyle "yüksek kazanç" üreten bir sistem bulunamadı.

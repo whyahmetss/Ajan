@@ -1,0 +1,29 @@
+
+max_kripto = 2 | prop (eğitim + doğrulama): {'en_kotu_gun_%': -1.16, 'en_dusuk_ozvarlik_%': -0.92, 'zirveden_en_buyuk_dusus_%': -7.3}
+                                                     kural  deneme  gecti_%  ihlal_gunluk_%  ihlal_toplam_%  sure_doldu_%  bitmedi_%  gecme_medyan_gun
+1. aşama: günlük 5 / toplam 10 statik / hedef 10 / süresiz     488     92.6             0.0             0.0           0.0        7.4             698.0
+                                         1. aşama: hedef 8     488     93.2             0.0             0.0           0.0        6.8             402.0
+                  günlük 4 / toplam 6 takip eden / hedef 8     488     57.0             0.0            36.3           0.0        6.8             402.0
+
+max_kripto = 3 | prop (eğitim + doğrulama): {'en_kotu_gun_%': -1.52, 'en_dusuk_ozvarlik_%': -0.92, 'zirveden_en_buyuk_dusus_%': -7.23}
+                                                     kural  deneme  gecti_%  ihlal_gunluk_%  ihlal_toplam_%  sure_doldu_%  bitmedi_%  gecme_medyan_gun
+1. aşama: günlük 5 / toplam 10 statik / hedef 10 / süresiz     488     93.6             0.0             0.0           0.0        6.4             524.0
+                                         1. aşama: hedef 8     488     95.5             0.0             0.0           0.0        4.5             402.0
+                  günlük 4 / toplam 6 takip eden / hedef 8     488     64.5             0.0            31.8           0.0        3.7             402.0
+
+max_kripto = 4 | prop (eğitim + doğrulama): {'en_kotu_gun_%': -1.84, 'en_dusuk_ozvarlik_%': -0.92, 'zirveden_en_buyuk_dusus_%': -9.67}
+                                                     kural  deneme  gecti_%  ihlal_gunluk_%  ihlal_toplam_%  sure_doldu_%  bitmedi_%  gecme_medyan_gun
+1. aşama: günlük 5 / toplam 10 statik / hedef 10 / süresiz     488     94.7             0.0             0.0           0.0        5.3             524.0
+                                         1. aşama: hedef 8     488     95.7             0.0             0.0           0.0        4.3             514.0
+                  günlük 4 / toplam 6 takip eden / hedef 8     488     58.4             0.0            37.9           0.0        3.7             661.0
+
+ max_kripto                       donem  islem  WR_%  ort_R   PF  yillik_%  max_dusus_%  MC_dusus_p95_%
+          2                      egitim    114  50.9  0.588 2.60       5.1          3.5             4.9
+          2                   dogrulama     85  45.9  0.235 1.59       3.6          4.3             5.2
+          2 kilitli (daha önce görüldü)     55  47.3  0.205 1.48       2.4          4.1             5.7
+          3                      egitim    146  51.4  0.651 2.86       7.3          4.1             5.4
+          3                   dogrulama    108  46.3  0.266 1.67       5.1          5.7             6.2
+          3 kilitli (daha önce görüldü)     69  46.4  0.245 1.59       3.6          4.2             6.4
+          4                      egitim    167  50.9  0.822 3.27      10.5          3.3             5.2
+          4                   dogrulama    125  44.0  0.221 1.52       4.9          7.7             7.4
+          4 kilitli (daha önce görüldü)     81  44.4  0.180 1.40       3.1          6.2             7.9
