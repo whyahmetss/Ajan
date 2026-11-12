@@ -401,3 +401,33 @@ kanıt değildir; "aynı kural başka enstrümanlarda da çalışıyor mu" sorus
 - Geçerse: bot olduğu gibi kalır (zaten bütün kriptoları tarıyor); 8 + 12 coinlik portföy sonucu raporlanır.
 - Kalırsa: bot varsayılan olarak yalnızca test edilmiş 8 coinle sınırlandırılır (`config.yaml`'a izin listesi);
   bu bir risk azaltma değişikliğidir, strateji değişikliği değil.
+
+### 8.1 SONUÇ (tek koşu, 2026-11-12) — `python -m arastirma.calisma.k2_genis`, çıktı: `docs/k2_genis_ciktisi.txt`
+Sembol başına, 12 yeni coin, maliyet (spread %0.30, finansman %20/yıl) + temel kayma dahil:
+
+| Dönem | İşlem | WR | Ort R | PF | p (rastgele) | Ort R %95 aralığı |
+|---|---|---|---|---|---|---|
+| Kilit öncesi (→ 2024-07) | 172 | %37.8 | +0.117 | 1.23 | 0.13 | [−0.18, +0.43] |
+| Kilit sonrası (2024-07 → 2026-11) | 45 | %42.2 | +0.593 | 2.19 | 0.06 | [−0.32, +1.77] |
+| Bütün dönem | 217 | %38.7 | +0.216 | 1.42 | 0.036 | [−0.08, +0.57] |
+
+| Ölçüt | Sonuç |
+|---|---|
+| 1. İki dönemde ort R > 0 ve PF > 1.2 | GEÇTİ (kilit öncesi sınırda: PF 1.23) |
+| 2. Bütün dönem p < 0.05 | GEÇTİ (0.036) |
+| 3. Spread ×2'de ort R > 0 | GEÇTİ (+0.122R; ama sadece 28 işlem — aşağıya bak) |
+| 4. En az 7/12 coinde ort R > 0 | GEÇTİ (8/12; negatifler: ATOM, DOT, EOS, TRX) |
+
+**Karar (ön kayda göre): K2 genellenebiliyor; bot olduğu gibi kalır.** Ama sonuç güçlü değil ve şöyle okunmalı:
+- Dört ölçütün üçü sınırda geçti. %95 güven aralığı sıfırı içeriyor. Etki ilk 8 coindekinden küçük
+  (portföyde bütün dönem: ilk 8 coin +0.39R, 12 yeni coin +0.26R).
+- WR %39: hedefin çok altında. Kâr yine az sayıda büyük işlemden geliyor (XLM, ETC, NEAR, AVAX).
+- Yıllara göre tutarsız: 2019, 2020, 2022, 2025 negatif; 2021, 2023, 2024, 2026 pozitif. Boğa yıllarına bağlı.
+- Spread ×2 (%0.60) senaryosunda 217 işlemin 189'u botun spread filtresine (spread ≤ H1 ATR'nin %12'si)
+  takılıyor. Yani broker'ınızda küçük coinlerin spread'i genişse bot onlarda zaten çok az işlem açar.
+- 20 coin birlikte, en fazla 2 kripto pozisyonu kuralıyla: bütün dönem yıllık %6.0 (ilk 8 coin tek başına
+  %5.8), azami düşüş %9.1 (↔ %4.3). **Evreni genişletmek getiriyi artırmıyor, düşüşü artırıyor**; çünkü
+  pozisyon sayısı sınırlı ve yeni coinlerin kalitesi daha düşük.
+
+Bunun anlamı: K2'nin dayandığı etki (kripto günlük momentum) yalnızca seçtiğimiz 8 coine özgü bir tesadüf
+gibi görünmüyor; ama küçük, oynak ve piyasa rejimine bağlı. Getiri beklentisi değişmedi: yılda birkaç puan.
