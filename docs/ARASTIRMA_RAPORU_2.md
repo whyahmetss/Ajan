@@ -367,3 +367,37 @@ ATR, zaman stopu yok) sanal sonucu hesaplanır ve mevcut çıkışla yan yana g�
 modülüyle aynıdır (`tests/test_rapor.py` doğrular). Emir, risk ve strateji kodu değişmedi.
 Karar kuralı (şimdiden): en az 40 sonuçlanmış adayda gölge çıkışın ortalama R'si mevcut çıkıştan yüksekse ve
 haftalık blok bootstrap %90 aralığı sıfırın üstündeyse T2 yeniden değerlendirilir; aksi halde bırakılır.
+
+---
+
+## 8. K2'nin hiç bakılmamış coinlerde doğrulanması — ÖN KAYIT (2026-11-12, sonuçlardan ÖNCE yazıldı)
+
+**Neden:** Bot, broker'ın "kripto" olarak listelediği BÜTÜN sembolleri tarar; ama K2 yalnızca 8 coinde test
+edildi. Brokerda başka coinler varsa bot onlarda da işlem açacak. Ayrıca kripto için bakir geçmiş veri
+kalmadığını söylemiştik; bu, yalnızca o 8 coin için doğru. Hiç bakılmamış coinler, K2 için gerçek bir
+örneklem dışı testtir (kural ve parametreler donmuş durumda; hiçbir ayar yapılmayacak).
+
+**Evren (sonuç görülmeden sabitlendi):** MT5 brokerlarında CFD olarak sık görülen 12 coin, Binance spot USDT:
+BCH, LINK, DOT, AVAX, MATIC, TRX, XLM, EOS, ETC, UNI, ATOM, NEAR. Hayatta kalma yanlılığını azaltmak için
+sonradan değer kaybeden / listeden çıkanlar (EOS, MATIC) bilerek dahil edildi. Hiçbir coin sonuçtan sonra
+çıkarılmayacak.
+
+**Maliyet:** spread fiyatın %0.30'u (ilk 8 coindeki %0.15'in iki katı; küçük coin CFD'leri daha pahalı),
+finansman yıllık %20, temel kayma 0.25 × spread. Stres: spread ×2.
+
+**Kural:** K2 aynen (`gunluk_kirilim`: 20 gün zirve, > SMA200, SL 2 günlük ATR, 240 mum). Tek koşu.
+
+**Dönemler:** (a) kilit öncesi (→ 2024-07-06), (b) kilit sonrası (2024-07-06 → 2026-11). Bu coinlerde iki
+dönem de bakirdir. Not: coinler birbirine yüksek korelasyonlu olduğu için bu, ilk 8 coinden tam bağımsız bir
+kanıt değildir; "aynı kural başka enstrümanlarda da çalışıyor mu" sorusunu yanıtlar.
+
+**Ölçütler (hepsi gerekir → "K2 genellenebiliyor"):**
+1. İki dönemde de sembol başına ort R > 0 ve PF > 1.2.
+2. Bütün dönemde rastgele girişe karşı p < 0.05.
+3. Spread ×2'de bütün dönem ort R > 0.
+4. 12 coinin en az 7'sinde bütün dönem ort R > 0.
+
+**Sonuca göre eylem (şimdiden):**
+- Geçerse: bot olduğu gibi kalır (zaten bütün kriptoları tarıyor); 8 + 12 coinlik portföy sonucu raporlanır.
+- Kalırsa: bot varsayılan olarak yalnızca test edilmiş 8 coinle sınırlandırılır (`config.yaml`'a izin listesi);
+  bu bir risk azaltma değişikliğidir, strateji değişikliği değil.
