@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("numba")
 
 from arastirma import motor  # noqa: E402
-from arastirma.stratejiler import ADAYLAR, hacim_kirilim, orb, ortak  # noqa: E402
+from arastirma.stratejiler import ADAYLAR, hacim_kirilim, orb, ortak, tur3  # noqa: E402
 from tests.yardimci import STANDART_BILGI, elle_mumlar, rastgele_mumlar, ust_mumlar  # noqa: E402
 
 BILGI = {**STANDART_BILGI, "swap_mode": 5, "swap_long": -3.0, "swap_short": -2.0, "swap_rollover3days": 3}
@@ -25,9 +25,14 @@ def _df(zd, n, tohum=3):
     return df
 
 
-def _seri(zd, df):
-    ad, sinif, periyot = ZD_AD[zd]
-    return ortak.seri_kur(ad, sinif, BILGI, df, periyot, 50, gunluk=(zd != "M15"))
+def _seri(zd, df, ad=None):
+    ad0, sinif, periyot = ZD_AD[zd]
+    if ad == "X1":
+        ad0, sinif = "US500", "endeks"
+    s = ortak.seri_kur(ad0, sinif, BILGI, df, periyot, 50, gunluk=(zd != "M15"))
+    if zd == "H1" and sinif == "kripto":
+        tur3.btc_rejimi_ekle([s])
+    return s
 
 
 def _elle(satirlar, spread_pt=0):
@@ -122,13 +127,13 @@ def test_eski_motorla_ayni_sonuc():
 
 
 # ------------------------------------------------------------------ gelecek verisi (kesme) testi
-@pytest.mark.parametrize("ad", ["K2", "O1", "O2", "V1", "T1", "T2", "M1"])
+@pytest.mark.parametrize("ad", ["K2", "O1", "O2", "V1", "T1", "T2", "M1", "S1", "B1", "X1"])
 def test_gelecek_verisi_kullanilmiyor(ad):
     """Sinyaller, verinin t anında kesilmiş haliyle de AYNI çıkmalı (kesimden önceki bütün mumlar için)."""
     mod = ADAYLAR[ad][1]
     n = {"M15": 12000, "H1": 9000, "H4": 3000}[mod.ZD]
-    df = _df(mod.ZD, n)
-    tam_seri = _seri(mod.ZD, df)
+    df = _df(mod.ZD, n, tohum=2 if ad == "S1" else 3)
+    tam_seri = _seri(mod.ZD, df, ad)
     assert mod.evren(tam_seri)
     prm = {**mod.PRM, "hacim_kat": 0.8} if ad == "V1" else mod.PRM     # sentetik veride yeterli sinyal için
     tam = mod.sinyal(tam_seri, prm)
@@ -136,7 +141,7 @@ def test_gelecek_verisi_kullanilmiyor(ad):
     pay = 100 if mod.ZD == "M15" else 2                       # ORB: seans sonu mumu için bir günlük pay
     rng = np.random.default_rng(0)
     for kes in rng.integers(n // 3, n - 5, 25):
-        kisa_seri = _seri(mod.ZD, df.iloc[:kes])
+        kisa_seri = _seri(mod.ZD, df.iloc[:kes], ad)
         kisa = mod.sinyal(kisa_seri, prm)
         m_tam, m_kisa = tam.i < kes - pay, kisa.i < kes - pay
         assert (tam.i[m_tam] == kisa.i[m_kisa]).all() if m_tam.sum() == m_kisa.sum() else False

@@ -17,12 +17,13 @@ import pandas as pd
 from arastirma import motor, prop
 from arastirma.deney import cfg_yukle
 from arastirma.motor import Maliyet
-from arastirma.stratejiler import ADAYLAR, ortak
+from arastirma.stratejiler import ADAYLAR, ortak, tur3
 from arastirma.veri_topla import HAM, KRIPTO, sunucu_zamani
 from bot import backtest
 from bot.yollar import yol
 
 pd.set_option("display.width", 250)
+K2_KIYAS = ("V1", "T2", "B1")                  # K2 ile aynı sinyal ailesi: ölçüt 7 (K2'den iyi mi) uygulanır
 KAY = 0.25                                      # temel kayma: piyasa emirlerinde spread'in çeyreği
 MAJOR = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "EURJPY", "GBPJPY"}      # Lean FxcmFeeModel 1. grup
 STRES = [("temel (kayma 0.25 sp)", Maliyet(), KAY, 0.0),
@@ -83,6 +84,8 @@ def yukle(zd: str, cfg, kilitli: bool = False) -> list:
         if zd == "H1" and s["sinif"] == "kripto":
             df = df.merge(_kripto_hacim(s["ad"]), on="time", how="left")
         out.append(ortak.seri_kur(s["ad"], s["sinif"], _komisyon(s["ad"], s["sinif"], s["bilgi"]), df, PERIYOT[zd], isinma))
+    if zd == "H1":
+        tur3.btc_rejimi_ekle(out)
     return out
 
 
@@ -228,7 +231,7 @@ def rapor(ad, veri, dn, cfg, k2=None) -> dict:
         print("   Bütün dönem:", ps.attrs, "\n   Monte Carlo (kapanmış işlemlerle):", prop.monte_carlo(pf))
         ozet["prop_ihlal_%"] = float(ps.iloc[0]["ihlal_gunluk_%"] + ps.iloc[0]["ihlal_toplam_%"])
         ozet["prop_gecti_%"] = float(ps.iloc[0]["gecti_%"])
-    if k2 is not None and ad in ("V1", "T2"):
+    if k2 is not None and ad in K2_KIYAS:
         print("\n8) K2'ye göre fark (ort R, haftalık blok bootstrap %90 aralığı):")
         for b in ("egitim", "dogrulama"):
             if len(sonuc[b]) and len(k2[b]):
@@ -241,10 +244,11 @@ def rapor(ad, veri, dn, cfg, k2=None) -> dict:
 
 
 def olcutler(o: dict, n_hipotez: int = 6) -> list:
+    n_hipotez = 3 if o["aday"] in ("S1", "B1", "X1") else n_hipotez
     """Bölüm 4.7 eleme ölçütleri (8 = dokunulmamış test, burada değerlendirilmez)."""
     ad = o["aday"]
     d, e = o.get("dogrulama", {}), o.get("egitim", {})
-    asgari = (100, 40) if ad in ("V1", "T2") else (200, 80)
+    asgari = (100, 40) if ad in K2_KIYAS + ("S1", "X1") else (200, 80)
     sonuc = [("1 doğrulama ort R >= +0.05 ve PF >= 1.2", d.get("ort_R", -9) >= 0.05 and d.get("kar_faktoru", 0) >= 1.2),
              (f"2 işlem sayısı eğitim >= {asgari[0]}, doğrulama >= {asgari[1]}",
               e.get("islem", 0) >= asgari[0] and d.get("islem", 0) >= asgari[1]),
@@ -252,7 +256,7 @@ def olcutler(o: dict, n_hipotez: int = 6) -> list:
              ("4 spread x1.5 + kayma 0.5 sp'de ort R > 0", (o.get("stres_ort_R") or -9) > 0),
              ("5 komşu parametrelerin hepsinde ort R > 0", (o.get("komsu_min_ort_R") or -9) > 0),
              ("6 yılların >= %70'i pozitif", o.get("pozitif_yil_orani", 0) >= 0.7)]
-    if ad in ("V1", "T2"):
+    if ad in K2_KIYAS:
         f = o.get("k2_fark_dogrulama")
         sonuc.append(("7 K2'den iyi: doğrulamada fark > 0 ve %90 aralığının altı > 0", bool(f and f[0] > 0 and f[1] > 0)))
     sonuc.append(("9 prop ihlal oranı <= %5", o.get("prop_ihlal_%", 100.0) <= 5.0))
