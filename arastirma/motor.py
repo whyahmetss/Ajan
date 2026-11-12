@@ -318,7 +318,7 @@ def portfoy(adaylar: pd.DataFrame, skor: np.ndarray, cfg) -> pd.DataFrame:
             acik_risk = sum(p[6] for p in acik if p[3] < 0 or p[3] > T)
             if gunluk.get(T // 86400, 0.0) - acik_risk - row.risk_yuzde < -r["gunluk_max_zarar_yuzde"] * (1 + 1e-9):
                 continue
-            acik.append((row.sembol, row.cikis_t + 3600, d, row.be_T, row.cikis_t // 86400,
+            acik.append((row.sembol, row.cikis_t + getattr(row, "periyot", 3600), d, row.be_T, row.cikis_t // 86400,
                          row.R * row.risk_yuzde, row.risk_yuzde))
             secilen.append(row.Index)
     return adaylar.loc[secilen]
