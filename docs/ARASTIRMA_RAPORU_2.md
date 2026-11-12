@@ -431,3 +431,29 @@ Sembol başına, 12 yeni coin, maliyet (spread %0.30, finansman %20/yıl) + teme
 
 Bunun anlamı: K2'nin dayandığı etki (kripto günlük momentum) yalnızca seçtiğimiz 8 coine özgü bir tesadüf
 gibi görünmüyor; ama küçük, oynak ve piyasa rejimine bağlı. Getiri beklentisi değişmedi: yılda birkaç puan.
+
+---
+
+## 9. Üçüncü tur — ÖN KAYIT (2026-11-12, sonuçlardan ÖNCE yazıldı)
+
+Amaç: getiriyi artırabilecek, K2'nin kanıtlanmış etkisine (günlük momentum) dayanan üç aday + bir risk ayarı.
+Toplam hipotez sayısı bu turla 20 olur. Kurallar donduruldu; parametreler K2'den aynen alındı (yeni ayar yok).
+
+| # | Fikir | Kural | Evren |
+|---|---|---|---|
+| **S1** | K2'nin satış tarafı (ayı piyasasında da işlem) | Günün ilk mumu kapanınca: dünkü günlük kapanış ≤ son 20 günün en düşük kapanışı **ve** < SMA200 → SATIŞ. SL 2 günlük ATR, 240 mum, hedef yok | Kripto (ilk 8 coin) |
+| **B1** | Piyasa rejimi filtresi | K2 sinyali **ve** BTC'nin dünkü günlük kapanışı > BTC SMA200 | Kripto (ilk 8 coin) |
+| **X1** | K2'nin başka sınıflarda aynısı | K2 kuralı aynen (sadece alış) | Endeksler + altın + gümüş |
+
+Geliştirme: eğitim + doğrulama (→ 2024-07-06), önceki turlarla aynı maliyet/kayma ve ölçütler (Bölüm 4.7;
+Bonferroni eşiği 0.05/3 ≈ 0.017). B1 için ek ölçüt 7 (K2'den iyi, %90 aralığı sıfırın üstünde).
+
+Örneklem dışı kontrol (geliştirmeyi geçen adaylar için, tek sefer):
+- S1, B1: Bölüm 8'deki 12 coin (bu coinlerde yalnızca K2 alış sonucu görüldü; S1/B1 için bakir) — bütün dönem.
+  Ayrıca ilk 8 coinin kilitli dönemi "ikinci bakış" etiketiyle.
+- X1: endeks/altın kilitli dönemi (2024-07 → 2026-11) — bu sınıflarda hiçbir sonuç görülmedi, gerçekten bakir.
+
+Risk ayarı (hipotez değil, ödünleşim tablosu): aynı anda en fazla kripto pozisyonu 2 → 3 → 4. Getiri ve düşüş
+birlikte raporlanır; karar kullanıcıya aittir, varsayılan değişmez.
+
+Geçen aday olursa bile bota taşıma ayrı onaya bağlıdır.
