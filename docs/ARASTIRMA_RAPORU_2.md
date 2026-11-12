@@ -279,3 +279,83 @@ iyi görünme olasılığı yüksek olduğu için eşikler bilerek sıkıdır.
 4. Eğitim → doğrulama → sağlamlık → prop simülasyonu; eleme tablosu. **Burada durup rapor.**
 5. Kalan aday varsa: onayınızla dokunulmamış test (tek sefer) → rapor.
 6. Geçen olursa: bota taşıma önerisi (ayrı onay), önce sinyal/demo modunda ileriye dönük izleme.
+
+---
+
+## 7. SONUÇLAR — eğitim + doğrulama (2026-11-12)
+
+Kod, sonuçlara bakılmadan önce donduruldu ve commit edildi (`06aa589`); ardından tek koşu yapıldı:
+`python -m arastirma.deney2 O1 O2 V1 T1 T2 M1`. Tam çıktı: `docs/arastirma2_gelistirme_ciktisi.txt`.
+Dokunulmamış test dönemi **açılmadı** (kilit kaydında hâlâ tek açılış var).
+
+Ön kontroller: yeni simülatör kayma = 0 iken K2'de eski motorla birebir aynı sonucu verdi (eğitim 203 işlem
++0.889R, doğrulama 141 işlem +0.249R; portföy 114 / 85 işlem). 246 testin tamamı geçiyor; altı modülün hepsi
+kesme (gelecek verisi) testinden geçti.
+
+### 7.1 Karşılaştırma (portföy kurallarıyla, maliyet + temel kayma dahil)
+| Aday | Bölüm | İşlem | WR | Ort R | PF | Azami düşüş | Yıllık | p (rastgele) | Prop: geçti / ihlal |
+|---|---|---|---|---|---|---|---|---|---|
+| **K2 (mevcut)** | eğitim | 114 | %50.9 | +0.588 | 2.60 | %3.5 | %5.1 | 0.0008 | |
+| | doğrulama | 85 | %45.9 | +0.235 | 1.59 | %4.3 | %3.6 | 0.005 | %92.6 / %0 |
+| O1 (ORB) | eğitim | 5818 | %36.8 | −0.008 | 0.99 | %81.6 | −%3.7 | 0.001 | |
+| | doğrulama | 2506 | %36.3 | −0.022 | 0.96 | %54.6 | −%9.7 | 0.002 | %36.3 / %62.1 |
+| O2 (ORB + 1R hedef) | eğitim | 7488 | %48.6 | −0.057 | 0.88 | %223 | −%32.9 | 0.000 | |
+| | doğrulama | 3390 | %49.6 | −0.046 | 0.90 | %87.8 | −%27.7 | 0.000 | %13.5 / %84.6 |
+| V1 (K2 + hacim) | eğitim | 93 | %52.7 | +1.321 | 4.36 | %3.2 | %9.4 | 0.000 | |
+| | doğrulama | 67 | %40.3 | +0.246 | 1.58 | %3.9 | %2.9 | 0.005 | %89.5 / %0 |
+| T1 (oynaklık kırılımı) | eğitim | 1015 | %30.4 | −0.013 | 0.98 | %22.4 | −%1.0 | 0.0004 | |
+| | doğrulama | 495 | %29.1 | −0.068 | 0.90 | %45.1 | −%6.0 | 0.10 | %30.5 / %61.1 |
+| T2 (K2 + takip eden stop) | eğitim | 50 | %50.0 | +1.442 | 4.70 | %1.8 | %5.5 | 0.029 | |
+| | doğrulama | 35 | %31.4 | +1.010 | 2.77 | %5.3 | %6.3 | 0.023 | %91.8 / %0 |
+| M1 (bant dönüşü) | eğitim | 1399 | %57.8 | −0.093 | 0.78 | %71.6 | −%9.9 | 0.99 | |
+| | doğrulama | 629 | %62.0 | −0.012 | 0.97 | %10.6 | −%1.4 | 0.002 | %1.0 / %62.9 |
+
+K2 satırındaki küçük fark (önceki +0.240R → +0.235R) yeni eklenen temel kaymadan geliyor. Prop sütunu:
+"günlük %5 / toplam %10 statik / hedef %10 / süresiz" kuralı, 488 haftalık başlangıç.
+
+### 7.2 Eleme — altı adayın altısı da ELENDİ
+| Aday | Kaldığı ölçütler | Kısa açıklama |
+|---|---|---|
+| O1 | 1, 4, 5, 6, 9 | Sinyal rastgele girişten anlamlı derecede iyi (fark +0.08R) ama maliyetten sonra beklenti sıfırın altında. Kaymasız bile +0.003R. Sadece endekslerde doğrulama pozitif (+0.059R, PF 1.12), eğitimde endeksler de negatif (−0.034R). |
+| O2 | 1, 4, 5, 6, 9 | 1R hedef WR'yi %49'a çıkarıyor ama beklentiyi daha da düşürüyor (−0.05R). |
+| V1 | 7 | Kendi başına bütün ölçütleri geçiyor, ama K2'den iyi olduğu gösterilemedi: doğrulamada fark +0.061R, %90 aralığı [−0.090, +0.216]. Eğitimdeki büyük fark (+0.23R) doğrulamada kayboluyor; portföyde yıllık getiri K2'den düşük (%2.9 ↔ %3.6) çünkü işlem sayısı azalıyor. |
+| T1 | 1, 3, 4, 5, 6, 9 | Eğitimde sadece kripto pozitif (+0.47R); forex ve endeks negatif. Doğrulamada toplam negatif, rastgele girişten ayırt edilemiyor (p = 0.10). |
+| T2 | 3, 7 | En ilginç sonuç: doğrulama portföyünde +1.01R, PF 2.77, yıllık %6.3. Ama 35 işlem; rastgele girişe karşı p = 0.023 (eşik 0.008), K2 farkının %90 aralığı [−0.31, +0.96] sıfırı içeriyor. WR %31'e düşüyor, azami düşüş artıyor (sembol başına %11.2 ↔ K2 %5.8), kâr SOL/BNB/BTC'deki birkaç büyük işleme bağlı, XRP 17 işlemde 1 kazanç. Finansman ×3'te beklenti yarıya iniyor (uzun tutma). Kanıt yetersiz → elendi. |
+| M1 | 1, 4, 5, 6, 9 | WR %58–62 ama beklenti ≤ 0: tipik "yüksek WR, kenar yok". Eğitimde rastgele girişten bile kötü (p = 0.99). |
+
+Hiçbir aday ölçütleri geçmediği için **dokunulmamış test açılmayacak** ve bota hiçbir şey taşınmayacak.
+Sonuç, önceden yazıldığı gibi: **"iyileşme yok, K2 ile devam."**
+
+### 7.3 Prop firma simülasyonu — K2 (mevcut strateji)
+| Kural | Geçti | İhlal (günlük / toplam) | Süre doldu | Geçenlerde medyan süre |
+|---|---|---|---|---|
+| günlük 5 / toplam 10 statik / hedef 10 / süresiz | %92.6 | 0 / 0 | — | 698 gün |
+| hedef 8 | %93.2 | 0 / 0 | — | 402 gün |
+| hedef 5 (2. aşama) | %95.3 | 0 / 0 | — | 389 gün |
+| hedef 10 / 30 gün | %0 | 0 / 0 | %97.5 | — |
+| hedef 10 / 60 gün | %0 | 0 / 0 | %97.5 | — |
+| günlük 5 / toplam 10 takip eden / hedef 10 | %92.6 | 0 / 0 | — | 698 gün |
+| günlük 4 / toplam 6 takip eden / hedef 8 | %57.0 | 0 / %36.3 | — | 402 gün |
+
+En kötü gün −%1.16; zirveden en büyük düşüş (yüzen dahil) −%7.3. Yorum: işlem başı %0.5 riskle K2 standart
+limitleri ihlal etmiyor ama hedefe ulaşması **1–2 yıl** sürüyor; süre sınırlı değerlendirmelerde (30/60 gün)
+hiç geçemiyor; dar takip eden limitte (%6) üçte bir ihlal ediyor. Bu haliyle prop değerlendirmesi için
+uygun bir araç değil. "Geçti" oranları geliştirme dönemine (2018–2024 kripto boğa dönemleri dahil) aittir.
+
+### 7.4 Bu turdan çıkan dersler
+- Kırılım sinyallerinde (ORB, oynaklık) yön bilgisi **var** (rastgele girişten istatistiksel olarak iyi), ama
+  forex/endeks/altında büyüklüğü işlem maliyetini karşılamıyor. Sorun sinyal değil, kenarın maliyetten küçük olması.
+- Çalışan tek şey hâlâ kripto günlük momentum. V1 ve T2 aynı kenarın farklı dilimleri; ikisi de K2'den
+  kanıtlanabilir biçimde iyi değil.
+- T2 (kazananı zaman stopu yerine takip eden stopla taşımak) umut verici ama küçük örneklemle kabul edilemez.
+  Kripto için bakir geçmiş veri de kalmadığından bunu doğrulamanın tek dürüst yolu ileriye dönük kayıttır:
+  bot sinyal/demo modunda K2 ile çalışırken aynı sinyallerin T2 çıkışı sanal olarak izlenebilir (bota strateji
+  eklemeden, sadece raporlama tarafında). Bu ayrı bir iş ve onayınıza bağlı.
+
+### 7.5 Sınırlamalar
+- Çoklu test: bu turla birlikte 17 hipotez denendi. Bonferroni eşiği bu yüzden kullanıldı.
+- Spread ×1.5 senaryolarında işlem sayısı düşüyor, çünkü botun azami spread filtresi (ATR'nin %12'si) daha
+  çok sinyali eliyor; bu senaryolardaki ort R "kalan işlemlerin" ortalamasıdır.
+- ORB verisi: forex için gerçek spread (FXCM m1), endeks/altın için modellenmiş spread. Broker verisi değil.
+- Prop simülasyonu toplamsal (bileşik değil) ve yaygın kural tiplerini modelliyor; belirli bir firmanın
+  metni değil.
