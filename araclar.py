@@ -194,7 +194,10 @@ def rapor_komut(cfg, gun):
         df = pd.DataFrame(r)
         return df[df["time"] < mb.mum_baslangici(int(tick.time), zd)].reset_index(drop=True), si.point   # kapanmış mumlar
 
-    df = rapor.sonuclari_hesapla(kayitlar, mum_getir, cfg)
+    def gecmis_getir(sembol, giris_t):
+        return pd.DataFrame(mt5.copy_rates_range(sembol, mt5.TIMEFRAME_H1, giris_t - 120 * 86400, giris_t - 1))
+
+    df = rapor.sonuclari_hesapla(kayitlar, mum_getir, cfg, gecmis_getir)
     mt5.shutdown()
     metin = rapor.rapor_metni(kayitlar, df, gun)
     print(metin)

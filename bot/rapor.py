@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
-from .strateji import SONSUZ, yeni_stop
+from .strateji import SONSUZ, gunluk_tablo, yeni_stop
 
 OYLAR = ("DESTEK", "KARSI", "NOTR", "HATA")
 
@@ -79,8 +79,44 @@ def plan_sonucu(kayit: dict, mumlar: pd.DataFrame, point: float, risk_cfg: dict)
     return {"R": ((c[son] - giris) if al else (giris - c[son] - sp[son])) / m, "cikis": "ACIK", "mum": son + 1}
 
 
-def sonuclari_hesapla(kayitlar: list[dict], mum_getir, cfg) -> pd.DataFrame:
-    """Planı olan her aday için sanal sonuç. mum_getir(sembol, giris_mumu_zamani) -> (mumlar DataFrame, point)."""
+GOLGE_IZ_ATR = 3.0      # gölge çıkış: girişten beri en yüksek günlük kapanış - 3 günlük ATR (araştırma adayı "T2")
+
+
+def golge_takip_sonucu(kayit: dict, mumlar: pd.DataFrame, gecmis: pd.DataFrame, point: float) -> dict | None:
+    """SADECE İZLEME: aynı girişin, zaman stopu yerine günlük kapanışa göre takip eden stopla sonucu ne olurdu?
+    Bot bu çıkışı KULLANMAZ; docs/ARASTIRMA_RAPORU_2.md'de kanıtı yetersiz bulunan T2 adayının ileriye dönük
+    kaydını tutmak içindir. Kurallar arastirma/stratejiler/takip_cikis.py ile aynıdır (test edilir).
+    mumlar: giriş mumundan itibaren H1; gecmis: girişten önceki H1 mumları (günlük ATR için, en az ~60 gün)."""
+    plan = kayit.get("plan") or {}
+    giris, sl = plan.get("giris"), plan.get("sl")
+    if kayit.get("yon") != "AL" or not giris or not sl or mumlar is None or gecmis is None or not len(mumlar) or not len(gecmis):
+        return None
+    m = giris - sl
+    if not m > 0:
+        return None
+    tum = pd.concat([gecmis[gecmis["time"] < mumlar["time"].iloc[0]], mumlar], ignore_index=True)
+    bas = len(tum) - len(mumlar)
+    g = gunluk_tablo(*(tum[k].to_numpy() for k in ("time", "open", "high", "low", "close")))
+    d_c, d_atr = g["d_c"][bas:], g["d_atr"][bas:]
+    o, l, c = (mumlar[k].to_numpy(float) for k in ("open", "low", "close"))
+    if not (np.isfinite(d_c[0]) and np.isfinite(d_atr[0])):
+        return None
+    tepe = d_c[0]
+    for k in range(len(o)):
+        if k > 0 and np.isfinite(d_c[k]) and np.isfinite(d_atr[k]):
+            tepe = max(tepe, d_c[k])
+            sl = max(sl, tepe - GOLGE_IZ_ATR * d_atr[k])
+        if k > 0 and o[k] <= sl:
+            return {"R": (o[k] - giris) / m, "cikis": "SL", "mum": k + 1}
+        if l[k] <= sl:
+            return {"R": (sl - giris) / m, "cikis": "SL", "mum": k + 1}
+    return {"R": (c[-1] - giris) / m, "cikis": "ACIK", "mum": len(o)}
+
+
+def sonuclari_hesapla(kayitlar: list[dict], mum_getir, cfg, gecmis_getir=None) -> pd.DataFrame:
+    """Planı olan her aday için sanal sonuç. mum_getir(sembol, giris_mumu_zamani) -> (mumlar DataFrame, point).
+    gecmis_getir(sembol, giris_mumu_zamani) -> girişten önceki H1 mumları; verilirse gunluk_kirilim adayları
+    için gölge takip çıkışı (R_golge, cikis_golge) da hesaplanır."""
     periyot = {"M15": 900, "M30": 1800, "H1": 3600, "H4": 14400}[cfg["zaman_dilimi"]]
     satirlar = []
     for k in kayitlar:
@@ -97,6 +133,13 @@ def sonuclari_hesapla(kayitlar: list[dict], mum_getir, cfg) -> pd.DataFrame:
         satir = {"zaman_utc": k.get("zaman_utc"), "sembol": k["sembol"], "strateji": k.get("strateji", "trend_skor"),
                  "yon": k.get("yon"), "asama": k.get("asama"), "sonuc": k.get("sonuc"), "llm_mod": k.get("llm_mod"),
                  "llm_onay": k.get("llm_onay"), **s}
+        if gecmis_getir is not None and satir["strateji"] == "gunluk_kirilim" and cfg["zaman_dilimi"] == "H1":
+            try:
+                gs = golge_takip_sonucu(k, mumlar, gecmis_getir(k["sembol"], giris_t), point)
+            except Exception:
+                gs = None
+            if gs:
+                satir["R_golge"], satir["cikis_golge"] = gs["R"], gs["cikis"]
         for o in k.get("oylar") or []:
             satir[f"oy_{o['ajan']}"] = o["oy"]
         for y in k.get("yargiclar") or []:
@@ -138,6 +181,17 @@ def rapor_metni(kayitlar: list[dict], df: pd.DataFrame, gun: int | None = None) 
     out.append(f"  hepsi: {_ozet(df)}")
     for s, g in df.groupby("strateji"):
         out.append(f"  {s}: {_ozet(g)}")
+
+    if "R_golge" in df:
+        gk = df[df["R_golge"].notna()]
+        iki = gk[(gk["cikis"] != "ACIK") & (gk["cikis_golge"] != "ACIK")]
+        out.append("\n-- Gölge çıkış izlemesi (bot KULLANMIYOR): aynı girişler, zaman stopu yerine takip eden stopla --")
+        out.append(f"  ikisi de sonuçlanan aday: {len(iki)} | hâlâ açık gölge işlem: {int((gk['cikis_golge'] == 'ACIK').sum())}")
+        if len(iki):
+            out.append(f"  mevcut çıkış : kazanma %{100 * (iki['R'] > 0).mean():.0f}, ort {iki['R'].mean():+.3f}R, toplam {iki['R'].sum():+.1f}R")
+            out.append(f"  gölge çıkış  : kazanma %{100 * (iki['R_golge'] > 0).mean():.0f}, ort {iki['R_golge'].mean():+.3f}R, "
+                       f"toplam {iki['R_golge'].sum():+.1f}R")
+        out.append("  Geçmiş veride bu fark kanıtlanamadı (35 işlem). Karar için en az 40-50 sonuçlanmış aday bekle.")
 
     llm = df[df["llm_onay"].notna()] if "llm_onay" in df else df.iloc[0:0]
     if len(llm):

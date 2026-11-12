@@ -104,3 +104,25 @@ def test_kayitlari_oku_ve_bos_rapor(tmp_path):
     k = rapor.kayitlari_oku(tmp_path)
     assert len(k) == 1 and json.dumps(k[0])
     assert "Sanal sonucu hesaplanabilen aday yok" in rapor.rapor_metni(k, pd.DataFrame())
+
+
+def test_golge_takip_cikisi_arastirma_motoruyla_ayni():
+    """Rapordaki gölge çıkış (izleme) = arastirma/stratejiler/takip_cikis (T2) kuralları."""
+    pytest.importorskip("numba")
+    import numpy as np
+    from arastirma.motor import Maliyet
+    from arastirma.stratejiler import ortak, takip_cikis
+    from tests.yardimci import STANDART_BILGI, rastgele_mumlar
+    df = pd.DataFrame(rastgele_mumlar(9000, tohum=3, oynaklik=0.004, spread_pt=0))[["time", "open", "high", "low", "close", "spread"]]
+    s = ortak.seri_kur("BTCUSD", "kripto", STANDART_BILGI, df, 3600, 50)
+    e = takip_cikis.T2.sinyal(s, takip_cikis.T2.PRM)
+    e = e.sec(e.i > 3000)
+    sim = ortak.simule(s, e, Maliyet(swap=False), s.n - 1)
+    assert len(sim) >= 5
+    for r in sim.itertuples():
+        j = r.i + 1
+        kayit = {"yon": "AL", "plan": {"giris": r.G, "sl": r.G - r.M}}
+        g = rapor.golge_takip_sonucu(kayit, df.iloc[j:].reset_index(drop=True), df.iloc[j - 2900:j], STANDART_BILGI["point"])
+        assert g["R"] == pytest.approx(r.R_brut, abs=1e-3)      # fark: günlük ATR ısınma süresi
+        assert (g["cikis"] == "ACIK") == (r.kod == ortak.SON)
+    assert rapor.golge_takip_sonucu({"yon": "SAT", "plan": {"giris": 1, "sl": 2}}, df, df, 1e-5) is None

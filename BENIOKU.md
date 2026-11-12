@@ -99,6 +99,14 @@ config ile kapatılamaz. Bot çalışırken MT5'te gerçek hesaba geçilirse bot
 
 Strateji yılda ~30-40 işlem açar; bir-iki haftada sonuç görmeyi bekleme. Gerçek hesap bu kurulumda kilitlidir.
 
+Rapor ayrıca bir **gölge çıkış izlemesi** gösterir: aynı girişler, 10 günlük zaman stopu yerine günlük kapanışa
+göre takip eden stopla (3 günlük ATR) kapatılsaydı ne olurdu? Bot bu çıkışı kullanmaz; geçmiş veride umut
+verici ama kanıtı yetersiz bulunan bir fikrin (T2) ileriye dönük kaydıdır. Ayrıntı: `docs/ARASTIRMA_RAPORU_2.md`.
+
+İkinci araştırma turunda (ORB, hacim onayı, oynaklık kırılımı, takip eden çıkış, bant dönüşü) altı adayın
+altısı da önceden sabitlenen ölçütlerde elendi; strateji değişmedi. Yeniden üretmek için:
+`python -m arastirma.veri_m15` ve `python -m arastirma.deney2 O1 O2 V1 T1 T2 M1`.
+
 ### İsteğe bağlı: kendi broker verinle backtest
 
 ```

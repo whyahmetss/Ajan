@@ -359,3 +359,11 @@ uygun bir araç değil. "Geçti" oranları geliştirme dönemine (2018–2024 kr
 - ORB verisi: forex için gerçek spread (FXCM m1), endeks/altın için modellenmiş spread. Broker verisi değil.
 - Prop simülasyonu toplamsal (bileşik değil) ve yaygın kural tiplerini modelliyor; belirli bir firmanın
   metni değil.
+
+### 7.6 Sonrası: gölge çıkış izlemesi (2026-11-12, onaylandı)
+T2 bota strateji olarak EKLENMEDİ. Sadece `python araclar.py rapor` çıktısına bir izleme bölümü eklendi:
+her `gunluk_kirilim` adayı için aynı girişin T2 çıkışıyla (girişten beri en yüksek günlük kapanış − 3 günlük
+ATR, zaman stopu yok) sanal sonucu hesaplanır ve mevcut çıkışla yan yana gösterilir. Kurallar araştırma
+modülüyle aynıdır (`tests/test_rapor.py` doğrular). Emir, risk ve strateji kodu değişmedi.
+Karar kuralı (şimdiden): en az 40 sonuçlanmış adayda gölge çıkışın ortalama R'si mevcut çıkıştan yüksekse ve
+haftalık blok bootstrap %90 aralığı sıfırın üstündeyse T2 yeniden değerlendirilir; aksi halde bırakılır.
